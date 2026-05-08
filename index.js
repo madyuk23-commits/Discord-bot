@@ -132,7 +132,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 (async () => {
     try {
         console.log('🔄 Регистрация команд...');
-        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+        await rest.put(Routes.applicationCommands(CLIENT_ID, '1412466769901129801'), { body: commands });
         console.log('✅ Команды зарегистрированы!');
     } catch (error) {
         console.error('❌ Ошибка регистрации:', error);
