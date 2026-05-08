@@ -403,6 +403,72 @@ client.on('interactionCreate', async (interaction) => {
             .setFooter({ text: `Всего: ${userWarnings.length}` });
         
         interaction.reply({ embeds: [embed], ephemeral: true });
+   
+    // Функция отправки логов (улучшенная)
+async function sendLog(guild, action, target, moderator, reason, duration = null) {
+    const logChannelId = process.env.LOG_CHANNEL_ID;
+    
+    if (!logChannelId) {
+        console.log('⚠️ LOG_CHANNEL_ID не задан в переменных окружения');
+        return;
+    }
+    
+    const logChannel = guild.channels.cache.get(logChannelId);
+    if (!logChannel) {
+        console.log(`⚠️ Канал для логов ${logChannelId} не найден на сервере ${guild.name}`);
+        return;
+    }
+    
+    // Проверка прав бота в канале логов
+    const botMember = guild.members.me;
+    if (!logChannel.permissionsFor(botMember).has(PermissionsBitField.Flags.SendMessages)) {
+        console.log(`⚠️ У бота нет прав писать в канал ${logChannel.name}`);
+        return;
+    }
+    
+    const embed = new EmbedBuilder()
+        .setTitle(getActionTitle(action))
+        .setColor(getActionColor(action))
+        .addFields(
+            { name: '👤 Пользователь', value: `${target.user?.tag || target.tag || target} (${target.id || target})`, inline: true },
+            { name: '🛡️ Модератор', value: `${moderator.user?.tag || moderator.tag}`, inline: true },
+            { name: '📝 Причина', value: reason || 'Не указана', inline: false }
+        )
+        .setTimestamp()
+        .setFooter({ text: `ID: ${target.id || target}` });
+    
+    if (duration) {
+        embed.addFields({ name: '⏱️ Длительность', value: duration, inline: true });
+    }
+    
+    try {
+        await logChannel.send({ embeds: [embed] });
+        console.log(`✅ Лог отправлен в канал ${logChannel.name}`);
+    } catch (error) {
+        console.error(`❌ Ошибка отправки лога: ${error.message}`);
+    }
+}
+
+function getActionTitle(action) {
+    const titles = {
+        'Бан': '🔨 БАН',
+        'Разбан': '🔓 РАЗБАН',
+        'Кик': '👢 КИК',
+        'Мут': '🔇 МУТ',
+        'Размут': '🔊 СНЯТИЕ МУТА',
+        'Предупреждение': '⚠️ ПРЕДУПРЕЖДЕНИЕ',
+        'Тайм-аут': '⏰ ТАЙМ-АУТ',
+        'Очистка чата': '🧹 ОЧИСТКА ЧАТА',
+        'Очистка предупреждений': '🗑️ ОЧИСТКА ПРЕДУПРЕЖДЕНИЙ'
+    };
+    return titles[action] || `🔨 ${action}`;
+}
+    
+    
+    
+    
+    
+    
     }
 
     // ========== ОЧИСТИТЬ ПРЕДУПРЕЖДЕНИЯ ==========
