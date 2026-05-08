@@ -244,7 +244,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await guild.members.ban(targetUser.id, { reason: `${reason} (Модератор: ${user.tag})` });
             await sendLog(guild, 'Бан', targetUser, user, reason);
-            interaction.reply({ content: `✅ ${targetUser.tag} забанен. Причина: ${reason}`, ephemeral: true });
+            interaction.reply({ content: `✅ ${targetUser.tag} свин утилизирован. Причина: ${reason}`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -265,7 +265,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await guild.members.unban(userId, reason);
             await sendLog(guild, 'Разбан', bannedUser.user, user, reason);
-            interaction.reply({ content: `✅ Пользователь ${bannedUser.user.tag} разбанен`, ephemeral: true });
+            interaction.reply({ content: `✅ Пользователь ${bannedUser.user.tag} приглашён обратно в королевство`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -285,7 +285,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await targetMember.kick(`${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Кик', targetUser, user, reason);
-            interaction.reply({ content: `✅ ${targetUser.tag} кикнут. Причина: ${reason}`, ephemeral: true });
+            interaction.reply({ content: `✅ ${targetUser.tag} свинтус был отправлен на выгул. Причина: ${reason}`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -311,7 +311,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await targetMember.timeout(msDuration, `${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Тайм-аут', targetUser, user, reason, duration);
-            interaction.reply({ content: `✅ ${targetUser.tag} получил мут на ${duration}. Причина: ${reason}`, ephemeral: true });
+            interaction.reply({ content: `✅ ${targetUser.tag} получил на омут на ${duration}. Причина: ${reason}`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -348,7 +348,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await targetMember.timeout(msDuration, `${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Тайм-аут', targetUser, user, reason, duration);
-            interaction.reply({ content: `✅ ${targetUser.tag} получил тайм-аут на ${duration}`, ephemeral: true });
+            interaction.reply({ content: `✅ ${targetUser.tag} стал аут на ${duration}`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
