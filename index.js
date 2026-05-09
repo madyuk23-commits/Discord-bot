@@ -389,46 +389,73 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
     }
 
-// ========== МУЗЫКА (ИСПРАВЛЕННЫЙ БЛОК КОМАНДЫ 'play') ==========
-    if (commandName === 'play') {
-        // 1. Проверяем, находится ли пользователь в голосовом канале
-        if (!member.voice.channel) {
-            return interaction.reply({ content: '❌ Вы должны быть в голосовом канале!', ephemeral: true });
-        }
+// ========== МУЗЫКАЛЬНАЯ СИСТЕМА ==========
+const { Player } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
 
-        const query = options.getString('query');
-        // Сообщаем Discord, что бот начал обработку
-        await interaction.deferReply();
-
-        try {
-            // 2. Самая важная часть: запускаем воспроизведение.
-            //    Библиотека сама найдёт и загрузит трек с YouTube.
-            const { track } = await player.play(member.voice.channel, query, {
-                requestedBy: interaction.user,
-                nodeOptions: {
-                    metadata: { channel: interaction.channel },
-                    volume: 50,
-                    leaveOnEmpty: true,
-                    leaveOnEnd: true
-                }
-            });
-
-            // 3. Отправляем сообщение об успехе
-            return interaction.editReply(`🎵 **${track.title}** добавлен в очередь!`);
-        } catch (error) {
-            // 4. Обрабатываем возможные ошибки
-            console.error('Ошибка play:', error);
-            return interaction.editReply(`❌ Ошибка: ${error.message}`);
-        }
+const player = new Player(client, {
+    leaveOnEmpty: true,      // Выйти из канала, если очередь пуста
+    leaveOnEnd: true,        // Выйти после окончания всех треков
+    leaveOnStop: true,       // Выйти после команды stop
+    volume: 50,              // Громкость по умолчанию (0-100)
+    bufferingTimeout: 3000,  // Таймаут буферизации (мс)
+    pauseOnEmpty: true,      // Пауза, если очередь пуста
+    autoSelfDeaf: true,      // Бот сам себя оглушает
+    ytdlOptions: {
+        filter: 'audioonly',
+        quality: 'highestaudio',
+        highWaterMark: 1 << 25
     }
-   
-    
-    // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
-    if (['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'clearwarnings', 'timeout', 'clear'].includes(commandName)) {
-        if (!hasModPermissions(member)) {
-            return interaction.reply({ content: '❌ Недостаточно прав!', ephemeral: true });
-        }
+});
+
+client.player = player;
+
+// Загрузка экстракторов (YouTube, Spotify, SoundCloud и др.)
+(async () => {
+    try {
+        await player.extractors.loadMulti(DefaultExtractors);
+        console.log('✅ Музыкальные экстракторы загружены (YouTube, Spotify, SoundCloud)');
+    } catch (error) {
+        console.error('❌ Ошибка загрузки экстракторов:', error);
     }
+})();
+
+// События музыкального плеера
+player.events.on('playerStart', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.title}**`);
+    }
+});
+
+player.events.on('playerSkip', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`⏭ Пропущен трек: **${track.title}**`);
+    }
+});
+
+player.events.on('queueEnd', (queue) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`📭 Очередь закончилась. Отключаюсь...`);
+    }
+});
+
+player.events.on('playerError', (queue, error) => {
+    console.error(`❌ Ошибка воспроизведения: ${error.message}`);
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`❌ Ошибка: ${error.message}`);
+    }
+});
+
+player.events.on('playerFinish', (queue) => {
+    console.log('Воспроизведение завершено');
+});
+
+player.events.on('connectionError', (queue, error) => {
+    console.error(`❌ Ошибка подключения: ${error.message}`);
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`❌ Ошибка подключения к голосовому каналу`);
+    }
+});
 
     // ========== БАН ==========
     if (commandName === 'ban') {
