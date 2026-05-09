@@ -17,7 +17,6 @@ const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 // =====================
 
-// ✅ ПРАВИЛЬНЫЕ INTENTS
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -29,7 +28,7 @@ const client = new Client({
     ]
 });
 
-// ========== МУЗЫКАЛЬНАЯ СИСТЕМА (ИСПРАВЛЕНА) ==========
+// ========== МУЗЫКАЛЬНАЯ СИСТЕМА (УПРОЩЁННАЯ) ==========
 const player = new Player(client, {
     leaveOnEmpty: true,
     leaveOnEnd: true,
@@ -38,10 +37,6 @@ const player = new Player(client, {
 });
 
 client.player = player;
-
-// Упрощённая загрузка экстракторов (без ошибок)
-player.extractors.registerDefault();
-console.log('✅ Музыкальные экстракторы загружены');
 
 // События музыкального плеера
 player.events.on('playerStart', (queue, track) => {
@@ -62,6 +57,8 @@ player.events.on('playerError', (queue, error) => {
         queue.metadata.channel.send(`❌ Ошибка воспроизведения: ${error.message}`);
     }
 });
+
+console.log('✅ Музыкальная система загружена');
 // ========================================
 
 // ========== СИСТЕМА РОЗЫГРЫШЕЙ ==========
