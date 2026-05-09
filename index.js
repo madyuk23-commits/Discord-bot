@@ -24,7 +24,8 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessageReactions  // ← ДОБАВЛЕНО!
     ]
 });
 
@@ -38,7 +39,7 @@ const player = new Player(client, {
 
 client.player = player;
 
-// Загрузка экстракторов для поддержки YouTube, Spotify и др.
+// Загрузка экстракторов
 (async () => {
     await player.extractors.loadMulti(DefaultExtractors);
     console.log('✅ Музыкальные экстракторы загружены');
@@ -51,20 +52,10 @@ player.events.on('playerStart', (queue, track) => {
     }
 });
 
-player.events.on('playerSkip', (queue, track) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`⏭ Пропущен трек: **${track.cleanTitle || track.title}**`);
-    }
-});
-
 player.events.on('queueEnd', (queue) => {
     if (queue.metadata?.channel) {
         queue.metadata.channel.send(`📭 Очередь закончилась. Отключаюсь...`);
     }
-});
-
-player.events.on('error', (error) => {
-    console.error(`❌ Музыкальная ошибка: ${error.message}`);
 });
 
 player.events.on('playerError', (queue, error) => {
@@ -399,52 +390,25 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ========== МУЗЫКА ==========
-    // PLAY - Воспроизведение музыки
     if (commandName === 'play') {
         if (!member.voice.channel) {
-            return interaction.reply({ content: '❌ Вы должны находиться в голосовом канале!', ephemeral: true });
+            return interaction.reply({ content: '❌ Вы должны быть в голосовом канале!', ephemeral: true });
         }
 
         const query = options.getString('query');
         await interaction.deferReply();
 
         try {
-            // Проверяем, есть ли уже очередь для этого сервера
-            let queue = player.nodes.get(guild.id);
-            
-            if (!queue) {
-                queue = player.nodes.create(guild.id, {
+            const { track } = await player.play(member.voice.channel, query, {
+                requestedBy: interaction.user,
+                nodeOptions: {
                     metadata: { channel: interaction.channel },
                     volume: 50,
                     leaveOnEmpty: true,
                     leaveOnEnd: true
-                });
-            }
-            
-            // Подключаемся к голосовому каналу
-            if (!queue.connection) {
-                await queue.connect(member.voice.channel);
-            }
-            
-            // Ищем и воспроизводим трек
-            const result = await player.search(query, {
-                requestedBy: interaction.user
+                }
             });
-            
-            if (!result || !result.tracks.length) {
-                return interaction.editReply('❌ Ничего не найдено. Попробуйте другую ссылку или название.');
-            }
-            
-            const track = result.tracks[0];
-            
-            // Добавляем трек в очередь
-            queue.addTrack(track);
-            
-            // Если сейчас ничего не играет, начинаем воспроизведение
-            if (!queue.isPlaying()) {
-                await queue.node.play();
-            }
-            
+
             return interaction.editReply(`🎵 **${track.cleanTitle || track.title}** добавлен в очередь!`);
         } catch (error) {
             console.error('Ошибка play:', error);
@@ -452,7 +416,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // SKIP - Пропуск трека
     if (commandName === 'skip') {
         const queue = player.nodes.get(guild.id);
         if (!queue || !queue.isPlaying()) {
@@ -463,7 +426,6 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply('⏭ Трек пропущен!');
     }
 
-    // STOP - Остановка и очистка очереди
     if (commandName === 'stop') {
         const queue = player.nodes.get(guild.id);
         if (!queue) {
@@ -474,7 +436,6 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply('🛑 Воспроизведение остановлено, очередь очищена.');
     }
 
-    // PAUSE - Пауза
     if (commandName === 'pause') {
         const queue = player.nodes.get(guild.id);
         if (!queue || !queue.node.isPlaying()) {
@@ -485,7 +446,6 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply('⏸ Музыка на паузе.');
     }
 
-    // RESUME - Продолжить
     if (commandName === 'resume') {
         const queue = player.nodes.get(guild.id);
         if (!queue || !queue.node.isPlaying()) {
@@ -496,7 +456,6 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply('▶ Воспроизведение возобновлено.');
     }
 
-    // QUEUE - Показать очередь
     if (commandName === 'queue') {
         const queue = player.nodes.get(guild.id);
         if (!queue || !queue.tracks.size) {
@@ -515,7 +474,6 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // VOLUME - Громкость
     if (commandName === 'volume') {
         const queue = player.nodes.get(guild.id);
         if (!queue) {
