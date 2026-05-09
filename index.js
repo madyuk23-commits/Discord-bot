@@ -2,7 +2,7 @@ const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
-const { Player } = require('@rafateoli/discord-music-player'); // Новая библиотека для музыки
+const { Player } = require('@rafateoli/discord-music-player');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,189 +10,12 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Бот работает!'));
 app.listen(PORT, () => console.log(`✅ Веб-сервер на порту ${PORT}`));
 
-// ===== НАСТРОЙКИ =====
+// ===== НАСТРОЙКИ (ТОЛЬКО ЗДЕСЬ И НИГДЕ БОЛЬШЕ!) =====
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
-// =====================
-
-// Создаем клиента Discord с необходимыми намерениями (intents)
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildVoiceStates // ВАЖНО: нужно для отслеживания голосовых каналов
-    ]
-});
-
-// ========== СИСТЕМА РОЗЫГРЫШЕЙ ==========
-// ... (код для giveaways оставьте без изменений из вашего предыдущего скрипта) ...
-
-// ========== НОВАЯ МУЗЫКАЛЬНАЯ СИСТЕМА ==========
-// Настройка музыкального плеера
-const player = new Player(client, {
-    leaveOnEmpty: false,      // Не выходить из канала, если очередь пуста
-    leaveOnEnd: false,        // Не выходить после окончания трека
-    timeout: 60000,           // Время ожидания перед отключением (60 секунд)
-    volume: 50,               // Громкость по умолчанию (0-100)
-});
-client.player = player;
-
-// Событие при начале воспроизведения трека
-player.on('trackStart', (queue, track) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.title}**`);
-    }
-});
-
-// Событие при добавлении трека в очередь
-player.on('trackAdd', (queue, track) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`➕ **${track.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
-    }
-});
-
-// Событие, когда очередь заканчивается
-player.on('queueDestroyed', (queue) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`👋 Очередь закончилась. Отключаюсь...`);
-    }
-});
-
-// ========== ВСЕ КОМАНДЫ ==========
-const commands = [
-    // ... (старые команды: news, ban, unban, kick, mute, unmute, timeout, warn, warnings, clearwarnings, clear, giveaway, reroll, endgiveaway, listgiveaways, begemot), они остаются без изменений ...
-    // НОВЫЕ МУЗЫКАЛЬНЫЕ КОМАНДЫ:
-    {
-        name: 'play',
-        description: 'Включить музыку по ссылке или названию',
-        options: [
-            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
-        ]
-    },
-    {
-        name: 'skip',
-        description: 'Пропустить текущий трек',
-    },
-    {
-        name: 'pause',
-        description: 'Поставить музыку на паузу',
-    },
-    {
-        name: 'resume',
-        description: 'Возобновить воспроизведение музыки',
-    },
-    {
-        name: 'stop',
-        description: 'Остановить музыку и очистить очередь',
-    },
-];
-
-// ... (оставьте регистрацию команд без изменений) ...
-
-// ========== ОБРАБОТЧИК КОМАНД ==========
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    
-    const { commandName, options, member, guild, user } = interaction;
-
-    // ========== НОВЫЕ МУЗЫКАЛЬНЫЕ КОМАНДЫ ==========
-    if (commandName === 'play') {
-        // Проверка, находится ли пользователь в голосовом канале
-        if (!member.voice.channel) {
-            return interaction.reply({ content: '❌ Вы должны находиться в голосовом канале, чтобы включить музыку!', ephemeral: true });
-        }
-
-        const query = options.getString('query');
-        
-        // Отложенный ответ, так как поиск и подключение могут занять время
-        await interaction.deferReply();
-
-        try {
-            // Создаем или получаем существующую очередь для гильдии (сервера)
-            let queue = client.player.getQueue(guild.id);
-            
-            if (!queue) {
-                // Создаем новую очередь, если её нет
-                queue = client.player.createQueue(guild.id, {
-                    metadata: { channel: interaction.channel }
-                });
-                // Подключаем бота к голосовому каналу
-                await queue.join(member.voice.channel);
-            }
-            
-            // Воспроизводим трек. Функция `play` может принять URL или строку для поиска
-            const song = await queue.play(query).catch(err => {
-                console.error(err);
-                return null;
-            });
-            
-            if (!song) {
-                return interaction.editReply('❌ Не удалось найти или воспроизвести трек. Проверьте ссылку или название.');
-            }
-            
-            // Если трек был добавлен в очередь, а не начал играть сразу
-            if (queue.tracks.length > 0) {
-                return interaction.editReply(`➕ **${song.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
-            } else {
-                return interaction.editReply(`🎵 Начинаю играть: **${song.title}**`);
-            }
-        } catch (error) {
-            console.error('Ошибка при воспроизведении:', error);
-            return interaction.editReply(`❌ Произошла ошибка при попытке воспроизведения: ${error.message}`);
-        }
-    }
-
-    if (commandName === 'skip') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.skip();
-        return interaction.reply('⏭ Трек пропущен!');
-    }
-
-    if (commandName === 'pause') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.setPaused(true);
-        return interaction.reply('⏸ Музыка на паузе.');
-    }
-
-    if (commandName === 'resume') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.setPaused(false);
-        return interaction.reply('▶ Воспроизведение возобновлено.');
-    }
-
-    if (commandName === 'stop') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        
-        queue.stop();
-        return interaction.reply('🛑 Воспроизведение остановлено, бот отключен от голосового канала.');
-    }
-});
-
-// ===== НАСТРОЙКИ =====
-const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID; // Канал для новостей
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;       // Канал для логов модерации
-// =====================
+// ====================================================
 
 const client = new Client({
     intents: [
@@ -200,7 +23,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessageReactions
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
@@ -233,10 +56,36 @@ GiveawayManager.on('giveawayEnded', (giveaway, winners) => {
 GiveawayManager.on('giveawayRerolled', (giveaway, winners) => {
     console.log(`Розыгрыш "${giveaway.prize}" перевыбран! Новые победители: ${winners.map(m => m.user.tag).join(', ')}`);
 });
-// ========================================
 
-// Хранилище предупреждений (в реальном проекте используй БД)
-const warnings = new Map(); // guildId-userId -> [{reason, moderator, date}]
+// ========== МУЗЫКАЛЬНАЯ СИСТЕМА ==========
+const player = new Player(client, {
+    leaveOnEmpty: false,
+    leaveOnEnd: false,
+    timeout: 60000,
+    volume: 50,
+});
+client.player = player;
+
+player.on('trackStart', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.title}**`);
+    }
+});
+
+player.on('trackAdd', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`➕ **${track.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
+    }
+});
+
+player.on('queueDestroyed', (queue) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`👋 Очередь закончилась. Отключаюсь...`);
+    }
+});
+
+// ========== ХРАНИЛИЩЕ ПРЕДУПРЕЖДЕНИЙ ==========
+const warnings = new Map();
 
 // ========== ВСЕ КОМАНДЫ ==========
 const commands = [
@@ -365,14 +214,26 @@ const commands = [
         name: 'listgiveaways',
         description: 'Показать активные розыгрыши на сервере'
     },
-    // Бегемот (с указанием канала)
+    // Бегемот
     {
         name: 'begemot',
         description: 'Отправить сообщение от Бегемота в указанный канал с пингом @everyone',
         options: [
             { name: 'channel_id', type: 3, required: true, description: 'ID канала, куда отправить сообщение' }
         ]
-    }
+    },
+    // Музыка
+    {
+        name: 'play',
+        description: 'Включить музыку по ссылке или названию',
+        options: [
+            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
+        ]
+    },
+    { name: 'skip', description: 'Пропустить текущий трек' },
+    { name: 'pause', description: 'Поставить музыку на паузу' },
+    { name: 'resume', description: 'Возобновить воспроизведение музыки' },
+    { name: 'stop', description: 'Остановить музыку и очистить очередь' }
 ];
 
 // Регистрация команд
@@ -504,6 +365,81 @@ client.on('interactionCreate', async (interaction) => {
         
         await targetChannel.send({ content: roleMention, embeds: [embed] });
         interaction.reply({ content: `✅ Новость отправлена в ${targetChannel.toString()}`, ephemeral: true });
+    }
+
+    // ========== МУЗЫКА ==========
+    if (commandName === 'play') {
+        if (!member.voice.channel) {
+            return interaction.reply({ content: '❌ Вы должны находиться в голосовом канале, чтобы включить музыку!', ephemeral: true });
+        }
+
+        const query = options.getString('query');
+        await interaction.deferReply();
+
+        try {
+            let queue = client.player.getQueue(guild.id);
+            
+            if (!queue) {
+                queue = client.player.createQueue(guild.id, {
+                    metadata: { channel: interaction.channel }
+                });
+                await queue.join(member.voice.channel);
+            }
+            
+            const song = await queue.play(query).catch(err => {
+                console.error(err);
+                return null;
+            });
+            
+            if (!song) {
+                return interaction.editReply('❌ Не удалось найти или воспроизвести трек. Проверьте ссылку или название.');
+            }
+            
+            if (queue.tracks.length > 0) {
+                return interaction.editReply(`➕ **${song.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
+            } else {
+                return interaction.editReply(`🎵 Начинаю играть: **${song.title}**`);
+            }
+        } catch (error) {
+            console.error('Ошибка при воспроизведении:', error);
+            return interaction.editReply(`❌ Произошла ошибка при попытке воспроизведения: ${error.message}`);
+        }
+    }
+
+    if (commandName === 'skip') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue || !queue.isPlaying) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        queue.skip();
+        return interaction.reply('⏭ Трек пропущен!');
+    }
+
+    if (commandName === 'pause') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue || !queue.isPlaying) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        queue.setPaused(true);
+        return interaction.reply('⏸ Музыка на паузе.');
+    }
+
+    if (commandName === 'resume') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue || !queue.isPlaying) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        queue.setPaused(false);
+        return interaction.reply('▶ Воспроизведение возобновлено.');
+    }
+
+    if (commandName === 'stop') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue) {
+            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
+        }
+        queue.stop();
+        return interaction.reply('🛑 Воспроизведение остановлено, бот отключен от голосового канала.');
     }
 
     // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
@@ -764,8 +700,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ========== РОЗЫГРЫШИ ==========
-    
-    // СОЗДАНИЕ РОЗЫГРЫША
     if (commandName === 'giveaway') {
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
             !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -855,7 +789,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ПЕРЕВЫБОР ПОБЕДИТЕЛЯ
     if (commandName === 'reroll') {
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
             !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -896,7 +829,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ДОСРОЧНОЕ ЗАВЕРШЕНИЕ
     if (commandName === 'endgiveaway') {
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
             !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -922,7 +854,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // СПИСОК АКТИВНЫХ РОЗЫГРЫШЕЙ
     if (commandName === 'listgiveaways') {
         const activeGiveaways = client.giveawaysManager.giveaways.filter(
             g => g.guildId === interaction.guildId && !g.ended
@@ -948,12 +879,10 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // ========== КОМАНДА БЕГЕМОТ (с указанием канала) ==========
+    // ========== КОМАНДА БЕГЕМОТ ==========
     if (commandName === 'begemot') {
-        // Получаем ID канала из параметра команды
         const targetChannelId = options.getString('channel_id');
         
-        // Проверяем, что ID корректный
         if (!targetChannelId || !/^\d+$/.test(targetChannelId)) {
             return interaction.reply({ 
                 content: '❌ Укажите корректный ID канала! Например: `123456789012345678`\n\nКак получить ID канала: Настройки Discord → Дополнительно → Режим разработчика → ПКМ по каналу → Копировать ID', 
@@ -961,10 +890,8 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
-        // Получаем канал по ID
         const targetChannel = client.channels.cache.get(targetChannelId);
         
-        // Проверяем, существует ли канал
         if (!targetChannel) {
             return interaction.reply({ 
                 content: `❌ Канал с ID \`${targetChannelId}\` не найден! Убедись, что:\n1. ID указан верно\n2. Бот имеет доступ к этому каналу\n3. Канал существует на этом сервере`, 
@@ -972,7 +899,6 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
-        // Проверяем, что это текстовый канал
         if (!targetChannel.isTextBased()) {
             return interaction.reply({ 
                 content: '❌ Указанный канал должен быть текстовым!', 
@@ -980,20 +906,8 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
-        // ТЕКСТ, КОТОРЫЙ БУДЕТ ОТПРАВЛЕН (ТЫ МОЖЕШЬ ИЗМЕНИТЬ ЭТОТ ТЕКСТ)
-        const messageText = `**🦛 БЕГЕМОТ ГОВОРИТ:**
+        const messageText = `**🦛 БЕГЕМОТ ГОВОРИТ:**\n\nПривет всем! Я большой и добрый бегемот! 🦛\nНе забывайте улыбаться и радоваться жизни! ❤️\n\n*С любовью, ваш Бегемот*`;
         
-        ## Саламчик!😎
-        
-        Игры в которые мы ебашимся:
-        
-        ## https://www.roblox.com/games/10449761463/The-Strongest-Battlegrounds
-        
-        ## Кто не зайдет у того мама уборщицей работает ❤️
-        
-        *С любовью, ваш Бегемот который ебал всех в рот💗*`;
-        
-        // Проверка прав бота на отправку @everyone
         const botMember = interaction.guild.members.me;
         if (!botMember.permissions.has(PermissionsBitField.Flags.MentionEveryone)) {
             return interaction.reply({ 
@@ -1002,7 +916,6 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
         
-        // Проверка прав бота в целевом канале
         const channelPermissions = targetChannel.permissionsFor(botMember);
         if (!channelPermissions || !channelPermissions.has(PermissionsBitField.Flags.SendMessages)) {
             return interaction.reply({ 
@@ -1012,19 +925,16 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         try {
-            // Отправляем сообщение в указанный канал
             await targetChannel.send({
                 content: `@everyone\n\n${messageText}`,
                 allowedMentions: { parse: ['everyone'] }
             });
             
-            // Подтверждение автору команды
             await interaction.reply({ 
                 content: `✅ Сообщение от Бегемота отправлено в канал ${targetChannel.toString()} с @everyone!`, 
                 ephemeral: true 
             });
             
-            // Отправляем лог в канал модерации (если есть)
             if (LOG_CHANNEL_ID) {
                 const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
                 if (logChannel) {
