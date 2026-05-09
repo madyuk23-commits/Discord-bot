@@ -187,10 +187,13 @@ const commands = [
         name: 'listgiveaways',
         description: 'Показать активные розыгрыши на сервере'
     },
-    // Бегемот
+    // Бегемот (с указанием канала)
     {
         name: 'begemot',
-        description: 'Отправить сообщение от Бегемота с пингом @everyone'
+        description: 'Отправить сообщение от Бегемота в указанный канал с пингом @everyone',
+        options: [
+            { name: 'channel_id', type: 3, required: true, description: 'ID канала, куда отправить сообщение' }
+        ]
     }
 ];
 
@@ -767,14 +770,48 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // ========== КОМАНДА БЕГЕМОТ ==========
+    // ========== КОМАНДА БЕГЕМОТ (с указанием канала) ==========
     if (commandName === 'begemot') {
+        // Получаем ID канала из параметра команды
+        const targetChannelId = options.getString('channel_id');
+        
+        // Проверяем, что ID корректный
+        if (!targetChannelId || !/^\d+$/.test(targetChannelId)) {
+            return interaction.reply({ 
+                content: '❌ Укажите корректный ID канала! Например: `123456789012345678`\n\nКак получить ID канала: Настройки Discord → Дополнительно → Режим разработчика → ПКМ по каналу → Копировать ID', 
+                ephemeral: true 
+            });
+        }
+        
+        // Получаем канал по ID
+        const targetChannel = client.channels.cache.get(targetChannelId);
+        
+        // Проверяем, существует ли канал
+        if (!targetChannel) {
+            return interaction.reply({ 
+                content: `❌ Канал с ID \`${targetChannelId}\` не найден! Убедись, что:\n1. ID указан верно\n2. Бот имеет доступ к этому каналу\n3. Канал существует на этом сервере`, 
+                ephemeral: true 
+            });
+        }
+        
+        // Проверяем, что это текстовый канал
+        if (!targetChannel.isTextBased()) {
+            return interaction.reply({ 
+                content: '❌ Указанный канал должен быть текстовым!', 
+                ephemeral: true 
+            });
+        }
+        
         // ТЕКСТ, КОТОРЫЙ БУДЕТ ОТПРАВЛЕН (ТЫ МОЖЕШЬ ИЗМЕНИТЬ ЭТОТ ТЕКСТ)
         const messageText = `**🦛 БЕГЕМОТ ГОВОРИТ:**
-        \n\n # Саламчик всем! 🐖
-        Все игры в которые мы гоняем:
+        
+        ## Саламчик!😎
+        
+        Игры в которые мы ебашимся:
         
         ## https://www.roblox.com/games/10449761463/The-Strongest-Battlegrounds
+        
+        ## Кто не зайдет у того мама уборщицей работает ❤️
         
         *С любовью, ваш Бегемот который ебал всех в рот💗*`;
         
@@ -782,21 +819,30 @@ client.on('interactionCreate', async (interaction) => {
         const botMember = interaction.guild.members.me;
         if (!botMember.permissions.has(PermissionsBitField.Flags.MentionEveryone)) {
             return interaction.reply({ 
-                content: '❌ У бота нет права упоминать @everyone! Выдайте боту право "Упоминать @everyone".\n\nИнструкция: Настройки сервера → Роли → Роль бота → Включить "Упоминать @everyone и @here"', 
+                content: '❌ У бота нет права упоминать @everyone! Выдайте боту право "Упоминать @everyone и @here".\n\nИнструкция: Настройки сервера → Роли → Роль бота → Включить "Упоминать @everyone и @here"', 
+                ephemeral: true 
+            });
+        }
+        
+        // Проверка прав бота в целевом канале
+        const channelPermissions = targetChannel.permissionsFor(botMember);
+        if (!channelPermissions || !channelPermissions.has(PermissionsBitField.Flags.SendMessages)) {
+            return interaction.reply({ 
+                content: `❌ У бота нет права отправлять сообщения в канал ${targetChannel.toString()}!`, 
                 ephemeral: true 
             });
         }
         
         try {
-            // Отправляем сообщение в тот же канал, где была введена команда
-            await interaction.channel.send({
+            // Отправляем сообщение в указанный канал
+            await targetChannel.send({
                 content: `@everyone\n\n${messageText}`,
                 allowedMentions: { parse: ['everyone'] }
             });
             
             // Подтверждение автору команды
             await interaction.reply({ 
-                content: '✅ Сообщение от Бегемота отправлено с @everyone!', 
+                content: `✅ Сообщение от Бегемота отправлено в канал ${targetChannel.toString()} с @everyone!`, 
                 ephemeral: true 
             });
             
@@ -809,7 +855,8 @@ client.on('interactionCreate', async (interaction) => {
                         .setColor(0xFFA500)
                         .addFields(
                             { name: '👤 Использовал', value: interaction.user.tag, inline: true },
-                            { name: '📢 Канал', value: interaction.channel.toString(), inline: true }
+                            { name: '📢 Целевой канал', value: targetChannel.toString(), inline: true },
+                            { name: '🆔 ID канала', value: targetChannelId, inline: true }
                         )
                         .setTimestamp();
                     await logChannel.send({ embeds: [logEmbed] });
