@@ -2,7 +2,7 @@ const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
-const roblox = require('roblox-api-discord');
+const noblox = require('noblox.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -653,84 +653,82 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ========== ROBLOX ИНФОРМАЦИЯ (исправлено с noblox.js) ==========
-if (commandName === 'roblox') {
-    const robloxUsername = options.getString('username');
-    
-    await interaction.deferReply();
-
-    try {
-        // Получаем ID пользователя по имени
-        const userId = await noblox.getIdFromUsername(robloxUsername);
+    // ========== ROBLOX ==========
+    if (commandName === 'roblox') {
+        const robloxUsername = options.getString('username');
         
-        if (!userId) {
-            return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
-        }
+        await interaction.deferReply();
 
-        // Получаем остальную информацию
-        const [userInfo, avatarUrl, followers, following, friends] = await Promise.all([
-            noblox.getPlayerInfo(userId),
-            noblox.getPlayerThumbnail(userId, 420, "png", true, "headshot"),
-            noblox.getFollowers(userId),
-            noblox.getFollowings(userId),
-            noblox.getFriends(userId)
-        ]);
-
-        const avatarURL = avatarUrl[0]?.imageUrl || 'https://www.roblox.com/favicon.ico';
-        const followersCount = followers?.total || 0;
-        const followingCount = following?.total || 0;
-        const friendsCount = friends?.length || 0;
-
-        const embed = new EmbedBuilder()
-            .setTitle(`🎮 Информация о ${userInfo.username}`)
-            .setColor(0x00AE86)
-            .setThumbnail(avatarURL)
-            .addFields(
-                { name: '🆔 ID', value: `${userId}`, inline: true },
-                { name: '👤 Имя', value: userInfo.username, inline: true },
-                { name: '📅 На платформе с', value: new Date(userInfo.joinDate).toLocaleDateString('ru-RU'), inline: true },
-                { name: '👥 Подписчиков', value: `${followersCount}`, inline: true },
-                { name: '📡 Подписок', value: `${followingCount}`, inline: true },
-                { name: '🤝 Друзей', value: `${friendsCount}`, inline: true }
-            )
-            .setTimestamp()
-            .setFooter({ text: `Запросил: ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
-
-        if (userInfo.status && userInfo.status !== '') {
-            embed.addFields({ name: '🕒 Статус', value: userInfo.status.substring(0, 200), inline: false });
-        }
-        
-        if (userInfo.blurb && userInfo.blurb !== '') {
-            embed.addFields({ name: '📝 О себе', value: userInfo.blurb.substring(0, 500), inline: false });
-        }
-
-        await interaction.editReply({ embeds: [embed] });
-
-        // Логирование
-        if (LOG_CHANNEL_ID) {
-            const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-            if (logChannel) {
-                const logEmbed = new EmbedBuilder()
-                    .setTitle('🌐 Roblox Команда')
-                    .setColor(0x00AE86)
-                    .addFields(
-                        { name: '👤 Пользователь', value: `<@${interaction.user.id}>`, inline: true },
-                        { name: '🔍 Запрос', value: robloxUsername, inline: true },
-                        { name: '📊 Результат', value: `✅ Найден (ID: ${userId})`, inline: true }
-                    )
-                    .setTimestamp();
-                await logChannel.send({ embeds: [logEmbed] });
+        try {
+            const userId = await noblox.getIdFromUsername(robloxUsername);
+            
+            if (!userId) {
+                return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
             }
-        }
 
-    } catch (error) {
-        console.error(`Ошибка получения данных о Roblox:`, error);
-        if (error.message && error.message.includes("not found")) {
-            return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
+            const [userInfo, avatarUrl, followers, following, friends] = await Promise.all([
+                noblox.getPlayerInfo(userId),
+                noblox.getPlayerThumbnail(userId, 420, "png", true, "headshot"),
+                noblox.getFollowers(userId),
+                noblox.getFollowings(userId),
+                noblox.getFriends(userId)
+            ]);
+
+            const avatarURL = avatarUrl[0]?.imageUrl || 'https://www.roblox.com/favicon.ico';
+            const followersCount = followers?.total || 0;
+            const followingCount = following?.total || 0;
+            const friendsCount = friends?.length || 0;
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🎮 Информация о ${userInfo.username}`)
+                .setColor(0x00AE86)
+                .setThumbnail(avatarURL)
+                .addFields(
+                    { name: '🆔 ID', value: `${userId}`, inline: true },
+                    { name: '👤 Имя', value: userInfo.username, inline: true },
+                    { name: '📅 На платформе с', value: new Date(userInfo.joinDate).toLocaleDateString('ru-RU'), inline: true },
+                    { name: '👥 Подписчиков', value: `${followersCount}`, inline: true },
+                    { name: '📡 Подписок', value: `${followingCount}`, inline: true },
+                    { name: '🤝 Друзей', value: `${friendsCount}`, inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: `Запросил: ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
+
+            if (userInfo.status && userInfo.status !== '') {
+                embed.addFields({ name: '🕒 Статус', value: userInfo.status.substring(0, 200), inline: false });
+            }
+            
+            if (userInfo.blurb && userInfo.blurb !== '') {
+                embed.addFields({ name: '📝 О себе', value: userInfo.blurb.substring(0, 500), inline: false });
+            }
+
+            await interaction.editReply({ embeds: [embed] });
+
+            if (LOG_CHANNEL_ID) {
+                const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+                if (logChannel) {
+                    const logEmbed = new EmbedBuilder()
+                        .setTitle('🌐 Roblox Команда')
+                        .setColor(0x00AE86)
+                        .addFields(
+                            { name: '👤 Пользователь', value: `<@${interaction.user.id}>`, inline: true },
+                            { name: '🔍 Запрос', value: robloxUsername, inline: true },
+                            { name: '📊 Результат', value: `✅ Найден (ID: ${userId})`, inline: true }
+                        )
+                        .setTimestamp();
+                    await logChannel.send({ embeds: [logEmbed] });
+                }
+            }
+
+        } catch (error) {
+            console.error(`Ошибка получения данных о Roblox:`, error);
+            if (error.message && error.message.includes("not found")) {
+                return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
+            }
+            await interaction.editReply(`❌ Произошла ошибка при получении данных. Пожалуйста, попробуйте позже.`);
         }
-        await interaction.editReply(`❌ Произошла ошибка при получении данных. Пожалуйста, попробуйте позже.`);
     }
-}
-    
+});
+
 // ========== ЗАПУСК ==========
 client.login(TOKEN);
