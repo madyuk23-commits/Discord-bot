@@ -18,7 +18,7 @@ const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 // =====================
 
-// ✅ ВОТ ЗДЕСЬ ВСЕ INTENTS - ПРОВЕРЬ, ЧТО ВСЕ 6 ПРИСУТСТВУЮТ!
+// ✅ ПРАВИЛЬНЫЕ INTENTS (ВСЕ 6)
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -26,7 +26,7 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReasons  // ← ЭТОТ НУЖЕН ДЛЯ РОЗЫГРЫШЕЙ!
+        GatewayIntentBits.GuildMessageReactions  // ← ИСПРАВЛЕНО!
     ]
 });
 
