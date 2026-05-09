@@ -12,8 +12,8 @@ app.listen(PORT, () => console.log(`✅ Веб-сервер на порту ${PO
 // ===== НАСТРОЙКИ =====
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
+const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID; // Канал для новостей
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;       // Канал для логов модерации
 // =====================
 
 const client = new Client({
@@ -186,6 +186,11 @@ const commands = [
     {
         name: 'listgiveaways',
         description: 'Показать активные розыгрыши на сервере'
+    },
+    // Бегемот
+    {
+        name: 'begemot',
+        description: 'Отправить сообщение от Бегемота с пингом @everyone'
     }
 ];
 
@@ -760,6 +765,63 @@ client.on('interactionCreate', async (interaction) => {
             .setFooter({ text: `Всего: ${activeGiveaways.length}` });
         
         await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // ========== КОМАНДА БЕГЕМОТ ==========
+    if (commandName === 'begemot') {
+        // ТЕКСТ, КОТОРЫЙ БУДЕТ ОТПРАВЛЕН (ТЫ МОЖЕШЬ ИЗМЕНИТЬ ЭТОТ ТЕКСТ)
+        const messageText = `**🦛 БЕГЕМОТ ГОВОРИТ:**
+        \n\n # Саламчик всем! 🐖
+        Все игры в которые мы гоняем:
+        
+        ## https://www.roblox.com/games/10449761463/The-Strongest-Battlegrounds
+        
+        *С любовью, ваш Бегемот который ебал всех в рот💗*`;
+        
+        // Проверка прав бота на отправку @everyone
+        const botMember = interaction.guild.members.me;
+        if (!botMember.permissions.has(PermissionsBitField.Flags.MentionEveryone)) {
+            return interaction.reply({ 
+                content: '❌ У бота нет права упоминать @everyone! Выдайте боту право "Упоминать @everyone".\n\nИнструкция: Настройки сервера → Роли → Роль бота → Включить "Упоминать @everyone и @here"', 
+                ephemeral: true 
+            });
+        }
+        
+        try {
+            // Отправляем сообщение в тот же канал, где была введена команда
+            await interaction.channel.send({
+                content: `@everyone\n\n${messageText}`,
+                allowedMentions: { parse: ['everyone'] }
+            });
+            
+            // Подтверждение автору команды
+            await interaction.reply({ 
+                content: '✅ Сообщение от Бегемота отправлено с @everyone!', 
+                ephemeral: true 
+            });
+            
+            // Отправляем лог в канал модерации (если есть)
+            if (LOG_CHANNEL_ID) {
+                const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+                if (logChannel) {
+                    const logEmbed = new EmbedBuilder()
+                        .setTitle('🦛 КОМАНДА БЕГЕМОТ')
+                        .setColor(0xFFA500)
+                        .addFields(
+                            { name: '👤 Использовал', value: interaction.user.tag, inline: true },
+                            { name: '📢 Канал', value: interaction.channel.toString(), inline: true }
+                        )
+                        .setTimestamp();
+                    await logChannel.send({ embeds: [logEmbed] });
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка команды begemot:', error);
+            await interaction.reply({ 
+                content: `❌ Ошибка при отправке сообщения: ${error.message}`, 
+                ephemeral: true 
+            });
+        }
     }
 });
 
