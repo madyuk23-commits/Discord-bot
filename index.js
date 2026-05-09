@@ -22,6 +22,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers  // Нужен для модерации
+        GatewayIntentBits.GuildMessageReactions
     ]
 });
 
