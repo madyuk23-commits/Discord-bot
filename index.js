@@ -18,6 +18,7 @@ const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 // =====================
 
+// ✅ ВОТ ЗДЕСЬ ВСЕ INTENTS - ПРОВЕРЬ, ЧТО ВСЕ 6 ПРИСУТСТВУЮТ!
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -25,7 +26,7 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReactions  // ← ДОБАВЛЕНО!
+        GatewayIntentBits.GuildMessageReasons  // ← ЭТОТ НУЖЕН ДЛЯ РОЗЫГРЫШЕЙ!
     ]
 });
 
@@ -462,12 +463,12 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: '📭 Очередь пуста.', ephemeral: true });
         }
         
-        const tracksList = queue.tracks.map((track, i) => `${i + 1}. **${track.cleanTitle || track.title}**`).join('\n');
+        const tracksList = queue.tracks.map((track, i) => `${i + 1}. **${track.cleanTitle || track.title}**`).slice(0, 10).join('\n');
         const currentTrack = queue.currentTrack;
         
         const embed = new EmbedBuilder()
             .setTitle('🎵 Текущая очередь')
-            .setDescription(`**Сейчас играет:** ${currentTrack ? currentTrack.cleanTitle || currentTrack.title : 'Нет'}\n\n**Очередь:**\n${tracksList}`)
+            .setDescription(`**Сейчас играет:** ${currentTrack ? currentTrack.cleanTitle || currentTrack.title : 'Нет'}\n\n**Очередь:**\n${tracksList || 'Пусто'}`)
             .setColor(0x00AE86)
             .setFooter({ text: `Всего треков: ${queue.tracks.size}` });
         
@@ -489,7 +490,7 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply(`🔊 Громкость установлена на **${level}%**`);
     }
 
-    // ========== ПРОВЕРКА ПРАВ ==========
+    // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
     if (['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'clearwarnings', 'timeout', 'clear'].includes(commandName)) {
         if (!hasModPermissions(member)) {
             return interaction.reply({ content: '❌ Недостаточно прав!', ephemeral: true });
@@ -723,7 +724,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             });
             
-            interaction.reply({ content: `✅ Розыгрыш "${prize}" в ${channel}`, ephemeral: true });
+            interaction.reply({ content: `✅ Розыгрыш "${prize}" создан в ${channel}`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
