@@ -2,6 +2,8 @@ const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
+const { Player } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,6 +27,53 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates
     ]
 });
+
+// ========== МУЗЫКАЛЬНАЯ СИСТЕМА ==========
+const player = new Player(client, {
+    leaveOnEmpty: true,
+    leaveOnEnd: true,
+    leaveOnStop: true,
+    volume: 50
+});
+
+client.player = player;
+
+// Загрузка экстракторов для поддержки YouTube, Spotify и др.
+(async () => {
+    await player.extractors.loadMulti(DefaultExtractors);
+    console.log('✅ Музыкальные экстракторы загружены');
+})();
+
+// События музыкального плеера
+player.events.on('playerStart', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.cleanTitle || track.title}**`);
+    }
+});
+
+player.events.on('playerSkip', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`⏭ Пропущен трек: **${track.cleanTitle || track.title}**`);
+    }
+});
+
+player.events.on('queueEnd', (queue) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`📭 Очередь закончилась. Отключаюсь...`);
+    }
+});
+
+player.events.on('error', (error) => {
+    console.error(`❌ Музыкальная ошибка: ${error.message}`);
+});
+
+player.events.on('playerError', (queue, error) => {
+    console.error(`❌ Ошибка воспроизведения: ${error.message}`);
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`❌ Ошибка воспроизведения: ${error.message}`);
+    }
+});
+// ========================================
 
 // ========== СИСТЕМА РОЗЫГРЫШЕЙ ==========
 const GiveawayManager = new GiveawaysManager(client, {
@@ -194,6 +243,41 @@ const commands = [
         options: [
             { name: 'channel_id', type: 3, required: true, description: 'ID канала, куда отправить сообщение' }
         ]
+    },
+    // Музыка
+    {
+        name: 'play',
+        description: 'Включить музыку по ссылке или названию',
+        options: [
+            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
+        ]
+    },
+    {
+        name: 'skip',
+        description: 'Пропустить текущий трек'
+    },
+    {
+        name: 'stop',
+        description: 'Остановить музыку и очистить очередь'
+    },
+    {
+        name: 'pause',
+        description: 'Поставить музыку на паузу'
+    },
+    {
+        name: 'resume',
+        description: 'Возобновить воспроизведение музыки'
+    },
+    {
+        name: 'queue',
+        description: 'Показать текущую очередь треков'
+    },
+    {
+        name: 'volume',
+        description: 'Изменить громкость',
+        options: [
+            { name: 'level', type: 4, required: true, description: 'Громкость от 0 до 100' }
+        ]
     }
 ];
 
@@ -214,14 +298,10 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 async function sendLog(guild, action, target, moderator, reason, duration = null) {
     const logChannelId = LOG_CHANNEL_ID;
     
-    if (!logChannelId) {
-        return;
-    }
+    if (!logChannelId) return;
     
     const logChannel = guild.channels.cache.get(logChannelId);
-    if (!logChannel) {
-        return;
-    }
+    if (!logChannel) return;
     
     const embed = new EmbedBuilder()
         .setTitle(getActionTitle(action))
@@ -316,6 +396,139 @@ client.on('interactionCreate', async (interaction) => {
         
         await targetChannel.send({ content: roleMention, embeds: [embed] });
         interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
+    }
+
+    // ========== МУЗЫКА ==========
+    // PLAY - Воспроизведение музыки
+    if (commandName === 'play') {
+        if (!member.voice.channel) {
+            return interaction.reply({ content: '❌ Вы должны находиться в голосовом канале!', ephemeral: true });
+        }
+
+        const query = options.getString('query');
+        await interaction.deferReply();
+
+        try {
+            // Проверяем, есть ли уже очередь для этого сервера
+            let queue = player.nodes.get(guild.id);
+            
+            if (!queue) {
+                queue = player.nodes.create(guild.id, {
+                    metadata: { channel: interaction.channel },
+                    volume: 50,
+                    leaveOnEmpty: true,
+                    leaveOnEnd: true
+                });
+            }
+            
+            // Подключаемся к голосовому каналу
+            if (!queue.connection) {
+                await queue.connect(member.voice.channel);
+            }
+            
+            // Ищем и воспроизводим трек
+            const result = await player.search(query, {
+                requestedBy: interaction.user
+            });
+            
+            if (!result || !result.tracks.length) {
+                return interaction.editReply('❌ Ничего не найдено. Попробуйте другую ссылку или название.');
+            }
+            
+            const track = result.tracks[0];
+            
+            // Добавляем трек в очередь
+            queue.addTrack(track);
+            
+            // Если сейчас ничего не играет, начинаем воспроизведение
+            if (!queue.isPlaying()) {
+                await queue.node.play();
+            }
+            
+            return interaction.editReply(`🎵 **${track.cleanTitle || track.title}** добавлен в очередь!`);
+        } catch (error) {
+            console.error('Ошибка play:', error);
+            return interaction.editReply(`❌ Ошибка: ${error.message}`);
+        }
+    }
+
+    // SKIP - Пропуск трека
+    if (commandName === 'skip') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.isPlaying()) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.node.skip();
+        interaction.reply('⏭ Трек пропущен!');
+    }
+
+    // STOP - Остановка и очистка очереди
+    if (commandName === 'stop') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue) {
+            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
+        }
+        
+        queue.delete();
+        interaction.reply('🛑 Воспроизведение остановлено, очередь очищена.');
+    }
+
+    // PAUSE - Пауза
+    if (commandName === 'pause') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.node.isPlaying()) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.node.setPaused(true);
+        interaction.reply('⏸ Музыка на паузе.');
+    }
+
+    // RESUME - Продолжить
+    if (commandName === 'resume') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.node.isPlaying()) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.node.setPaused(false);
+        interaction.reply('▶ Воспроизведение возобновлено.');
+    }
+
+    // QUEUE - Показать очередь
+    if (commandName === 'queue') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.tracks.size) {
+            return interaction.reply({ content: '📭 Очередь пуста.', ephemeral: true });
+        }
+        
+        const tracksList = queue.tracks.map((track, i) => `${i + 1}. **${track.cleanTitle || track.title}**`).join('\n');
+        const currentTrack = queue.currentTrack;
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎵 Текущая очередь')
+            .setDescription(`**Сейчас играет:** ${currentTrack ? currentTrack.cleanTitle || currentTrack.title : 'Нет'}\n\n**Очередь:**\n${tracksList}`)
+            .setColor(0x00AE86)
+            .setFooter({ text: `Всего треков: ${queue.tracks.size}` });
+        
+        interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // VOLUME - Громкость
+    if (commandName === 'volume') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue) {
+            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
+        }
+        
+        const level = options.getInteger('level');
+        if (level < 0 || level > 100) {
+            return interaction.reply({ content: '❌ Громкость должна быть от 0 до 100!', ephemeral: true });
+        }
+        
+        queue.node.setVolume(level);
+        interaction.reply(`🔊 Громкость установлена на **${level}%**`);
     }
 
     // ========== ПРОВЕРКА ПРАВ ==========
