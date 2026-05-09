@@ -270,6 +270,26 @@ const commands = [
     }
 ];
 
+{
+    name: 'play',
+    description: 'Включить музыку по ссылке или названию',
+    options: [
+        { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
+    ]
+},
+{ name: 'skip', description: 'Пропустить текущий трек' },
+{ name: 'stop', description: 'Остановить музыку и очистить очередь' },
+{ name: 'pause', description: 'Поставить музыку на паузу' },
+{ name: 'resume', description: 'Возобновить воспроизведение музыки' },
+{ name: 'queue', description: 'Показать текущую очередь треков' },
+{
+    name: 'volume',
+    description: 'Изменить громкость',
+    options: [
+        { name: 'level', type: 4, required: true, description: 'Громкость от 0 до 100' }
+    ]
+}
+
 // Регистрация команд
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
