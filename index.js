@@ -2,12 +2,190 @@ const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
+const { Player } = require('@rafateoli/discord-music-player'); // Новая библиотека для музыки
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => res.send('Бот работает!'));
 app.listen(PORT, () => console.log(`✅ Веб-сервер на порту ${PORT}`));
+
+// ===== НАСТРОЙКИ =====
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
+// =====================
+
+// Создаем клиента Discord с необходимыми намерениями (intents)
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates // ВАЖНО: нужно для отслеживания голосовых каналов
+    ]
+});
+
+// ========== СИСТЕМА РОЗЫГРЫШЕЙ ==========
+// ... (код для giveaways оставьте без изменений из вашего предыдущего скрипта) ...
+
+// ========== НОВАЯ МУЗЫКАЛЬНАЯ СИСТЕМА ==========
+// Настройка музыкального плеера
+const player = new Player(client, {
+    leaveOnEmpty: false,      // Не выходить из канала, если очередь пуста
+    leaveOnEnd: false,        // Не выходить после окончания трека
+    timeout: 60000,           // Время ожидания перед отключением (60 секунд)
+    volume: 50,               // Громкость по умолчанию (0-100)
+});
+client.player = player;
+
+// Событие при начале воспроизведения трека
+player.on('trackStart', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.title}**`);
+    }
+});
+
+// Событие при добавлении трека в очередь
+player.on('trackAdd', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`➕ **${track.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
+    }
+});
+
+// Событие, когда очередь заканчивается
+player.on('queueDestroyed', (queue) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`👋 Очередь закончилась. Отключаюсь...`);
+    }
+});
+
+// ========== ВСЕ КОМАНДЫ ==========
+const commands = [
+    // ... (старые команды: news, ban, unban, kick, mute, unmute, timeout, warn, warnings, clearwarnings, clear, giveaway, reroll, endgiveaway, listgiveaways, begemot), они остаются без изменений ...
+    // НОВЫЕ МУЗЫКАЛЬНЫЕ КОМАНДЫ:
+    {
+        name: 'play',
+        description: 'Включить музыку по ссылке или названию',
+        options: [
+            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
+        ]
+    },
+    {
+        name: 'skip',
+        description: 'Пропустить текущий трек',
+    },
+    {
+        name: 'pause',
+        description: 'Поставить музыку на паузу',
+    },
+    {
+        name: 'resume',
+        description: 'Возобновить воспроизведение музыки',
+    },
+    {
+        name: 'stop',
+        description: 'Остановить музыку и очистить очередь',
+    },
+];
+
+// ... (оставьте регистрацию команд без изменений) ...
+
+// ========== ОБРАБОТЧИК КОМАНД ==========
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    
+    const { commandName, options, member, guild, user } = interaction;
+
+    // ========== НОВЫЕ МУЗЫКАЛЬНЫЕ КОМАНДЫ ==========
+    if (commandName === 'play') {
+        // Проверка, находится ли пользователь в голосовом канале
+        if (!member.voice.channel) {
+            return interaction.reply({ content: '❌ Вы должны находиться в голосовом канале, чтобы включить музыку!', ephemeral: true });
+        }
+
+        const query = options.getString('query');
+        
+        // Отложенный ответ, так как поиск и подключение могут занять время
+        await interaction.deferReply();
+
+        try {
+            // Создаем или получаем существующую очередь для гильдии (сервера)
+            let queue = client.player.getQueue(guild.id);
+            
+            if (!queue) {
+                // Создаем новую очередь, если её нет
+                queue = client.player.createQueue(guild.id, {
+                    metadata: { channel: interaction.channel }
+                });
+                // Подключаем бота к голосовому каналу
+                await queue.join(member.voice.channel);
+            }
+            
+            // Воспроизводим трек. Функция `play` может принять URL или строку для поиска
+            const song = await queue.play(query).catch(err => {
+                console.error(err);
+                return null;
+            });
+            
+            if (!song) {
+                return interaction.editReply('❌ Не удалось найти или воспроизвести трек. Проверьте ссылку или название.');
+            }
+            
+            // Если трек был добавлен в очередь, а не начал играть сразу
+            if (queue.tracks.length > 0) {
+                return interaction.editReply(`➕ **${song.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
+            } else {
+                return interaction.editReply(`🎵 Начинаю играть: **${song.title}**`);
+            }
+        } catch (error) {
+            console.error('Ошибка при воспроизведении:', error);
+            return interaction.editReply(`❌ Произошла ошибка при попытке воспроизведения: ${error.message}`);
+        }
+    }
+
+    if (commandName === 'skip') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue || !queue.isPlaying) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.skip();
+        return interaction.reply('⏭ Трек пропущен!');
+    }
+
+    if (commandName === 'pause') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue || !queue.isPlaying) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.setPaused(true);
+        return interaction.reply('⏸ Музыка на паузе.');
+    }
+
+    if (commandName === 'resume') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue || !queue.isPlaying) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.setPaused(false);
+        return interaction.reply('▶ Воспроизведение возобновлено.');
+    }
+
+    if (commandName === 'stop') {
+        const queue = client.player.getQueue(guild.id);
+        if (!queue) {
+            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
+        }
+        
+        queue.stop();
+        return interaction.reply('🛑 Воспроизведение остановлено, бот отключен от голосового канала.');
+    }
+});
 
 // ===== НАСТРОЙКИ =====
 const TOKEN = process.env.TOKEN;
