@@ -2,7 +2,6 @@ const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
-const { Player } = require('discord-music-player'); // ИЗМЕНЕНО: другой пакет
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,36 +55,9 @@ GiveawayManager.on('giveawayEnded', (giveaway, winners) => {
 GiveawayManager.on('giveawayRerolled', (giveaway, winners) => {
     console.log(`Розыгрыш "${giveaway.prize}" перевыбран! Новые победители: ${winners.map(m => m.user.tag).join(', ')}`);
 });
+// ========================================
 
-// ========== МУЗЫКАЛЬНАЯ СИСТЕМА (ИСПРАВЛЕНА) ==========
-const player = new Player(client, {
-    leaveOnEmpty: false,
-    leaveOnEnd: false,
-    timeout: 60000,
-    volume: 50,
-});
-client.player = player;
-
-// События плеера
-player.on('trackStart', (queue, track) => {
-    if (queue.data?.channel) {
-        queue.data.channel.send(`🎵 Начинаю играть: **${track.title}**`);
-    }
-});
-
-player.on('trackAdd', (queue, track) => {
-    if (queue.data?.channel) {
-        queue.data.channel.send(`➕ **${track.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
-    }
-});
-
-player.on('queueDestroyed', (queue) => {
-    if (queue.data?.channel) {
-        queue.data.channel.send(`👋 Очередь закончилась. Отключаюсь...`);
-    }
-});
-
-// ========== ХРАНИЛИЩЕ ПРЕДУПРЕЖДЕНИЙ ==========
+// Хранилище предупреждений
 const warnings = new Map();
 
 // ========== ВСЕ КОМАНДЫ ==========
@@ -222,19 +194,7 @@ const commands = [
         options: [
             { name: 'channel_id', type: 3, required: true, description: 'ID канала, куда отправить сообщение' }
         ]
-    },
-    // Музыка
-    {
-        name: 'play',
-        description: 'Включить музыку по ссылке или названию',
-        options: [
-            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
-        ]
-    },
-    { name: 'skip', description: 'Пропустить текущий трек' },
-    { name: 'pause', description: 'Поставить музыку на паузу' },
-    { name: 'resume', description: 'Возобновить воспроизведение музыки' },
-    { name: 'stop', description: 'Остановить музыку и очистить очередь' }
+    }
 ];
 
 // Регистрация команд
@@ -255,19 +215,11 @@ async function sendLog(guild, action, target, moderator, reason, duration = null
     const logChannelId = LOG_CHANNEL_ID;
     
     if (!logChannelId) {
-        console.log('⚠️ LOG_CHANNEL_ID не задан в переменных окружения');
         return;
     }
     
     const logChannel = guild.channels.cache.get(logChannelId);
     if (!logChannel) {
-        console.log(`⚠️ Канал для логов ${logChannelId} не найден на сервере ${guild.name}`);
-        return;
-    }
-    
-    const botMember = guild.members.me;
-    if (!logChannel.permissionsFor(botMember).has(PermissionsBitField.Flags.SendMessages)) {
-        console.log(`⚠️ У бота нет прав писать в канал ${logChannel.name}`);
         return;
     }
     
@@ -279,8 +231,7 @@ async function sendLog(guild, action, target, moderator, reason, duration = null
             { name: '🛡️ Модератор', value: `${moderator.user?.tag || moderator.tag}`, inline: true },
             { name: '📝 Причина', value: reason || 'Не указана', inline: false }
         )
-        .setTimestamp()
-        .setFooter({ text: `ID: ${target.id || target}` });
+        .setTimestamp();
     
     if (duration) {
         embed.addFields({ name: '⏱️ Длительность', value: duration, inline: true });
@@ -288,7 +239,6 @@ async function sendLog(guild, action, target, moderator, reason, duration = null
     
     try {
         await logChannel.send({ embeds: [embed] });
-        console.log(`✅ Лог отправлен в канал ${logChannel.name}`);
     } catch (error) {
         console.error(`❌ Ошибка отправки лога: ${error.message}`);
     }
@@ -331,391 +281,8 @@ function hasModPermissions(member) {
 // ========== ЗАПУСК БОТА ==========
 client.once('ready', () => {
     console.log(`✅ Бот ${client.user.tag} запущен!`);
-    console.log(`📢 Канал для новостей: ${TARGET_CHANNEL_ID}`);
-    console.log(`📋 Канал для логов: ${LOG_CHANNEL_ID || 'не задан'}`);
-});
-
-// ========== ОБРАБОТЧИК КОМАНД ==========
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    
-    const { commandName, options, member, guild, user } = interaction;
-
-    // ========== МУЗЫКА (ОБНОВЛЕНО ДЛЯ НОВОГО ПАКЕТА) ==========
-    if (commandName === 'play') {
-        if (!member.voice.channel) {
-            return interaction.reply({ content: '❌ Вы должны находиться в голосовом канале!', ephemeral: true });
-        }
-
-        const query = options.getString('query');
-        await interaction.deferReply();
-
-        try {
-            let queue = client.player.getQueue(guild.id);
-            
-            if (!queue) {
-                queue = client.player.createQueue(guild.id);
-                await queue.join(member.voice.channel);
-                queue.data = { channel: interaction.channel };
-            }
-            
-            const song = await queue.play(query).catch(err => {
-                console.error(err);
-                return null;
-            });
-            
-            if (!song) {
-                return interaction.editReply('❌ Не удалось найти или воспроизвести трек.');
-            }
-            
-            interaction.editReply(`🎵 **${song.name}** добавлен в очередь!`);
-        } catch (error) {
-            console.error(error);
-            interaction.editReply(`❌ Ошибка: ${error.message}`);
-        }
-    }
-
-    if (commandName === 'skip') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        queue.skip();
-        interaction.reply('⏭ Трек пропущен!');
-    }
-
-    if (commandName === 'pause') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        queue.setPaused(true);
-        interaction.reply('⏸ Пауза');
-    }
-
-    if (commandName === 'resume') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        queue.setPaused(false);
-        interaction.reply('▶ Возобновлено');
-    }
-
-    if (commandName === 'stop') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        queue.stop();
-        interaction.reply('🛑 Остановлено');
-    }
-
-    // ========== ОСТАЛЬНЫЕ КОМАНДЫ (news, ban, mute, giveaway, begemot и т.д.) ==========
-    // ВСТАВЬ СЮДА ВЕСЬ ОСТАЛЬНОЙ КОД ИЗ ПРЕДЫДУЩЕГО СКРИПТА
-    // (Он такой же, как был раньше, без изменений)
-    
-    // ========== НОВОСТИ ==========
-    if (commandName === 'news') {
-        const text = options.getString('text');
-        const ping = options.getString('ping');
-        const fromWhom = options.getString('from_whom');
-        
-        const targetChannel = client.channels.cache.get(TARGET_CHANNEL_ID);
-        if (!targetChannel) {
-            return interaction.reply({ content: '❌ Канал не найден', ephemeral: true });
-        }
-        
-        const roleMention = /^\d+$/.test(ping) ? `<@&${ping}>` : ping;
-        
-        const embed = new EmbedBuilder()
-            .setTitle('📢 Новость / Объявление')
-            .setDescription(text)
-            .setColor(0x5865F2)
-            .addFields(
-                { name: '📌 От', value: fromWhom, inline: true },
-                { name: '👤 Автор', value: interaction.user.tag, inline: true }
-            )
-            .setTimestamp();
-        
-        await targetChannel.send({ content: roleMention, embeds: [embed] });
-        interaction.reply({ content: `✅ Новость отправлена в ${targetChannel.toString()}`, ephemeral: true });
-    }
-
-    // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
-    if (['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'clearwarnings', 'timeout', 'clear'].includes(commandName)) {
-        if (!hasModPermissions(member)) {
-            return interaction.reply({ 
-                content: '❌ У вас нет прав на использование этой команды', 
-                ephemeral: true 
-            });
-        }
-    }
-
-    // ========== БАН ==========
-    if (commandName === 'ban') {
-        const targetUser = options.getUser('user');
-        const reason = options.getString('reason') || 'Не указана';
-        
-        if (!targetUser) return interaction.reply({ content: '❌ Пользователь не найден', ephemeral: true });
-        
-        try {
-            await guild.members.ban(targetUser.id, { reason: `${reason} (Модератор: ${user.tag})` });
-            await sendLog(guild, 'Бан', targetUser, user, reason);
-            interaction.reply({ content: `✅ ${targetUser.tag} забанен. Причина: ${reason}`, ephemeral: true });
-        } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
-        }
-    }
-
-// ========== ХРАНИЛИЩЕ ПРЕДУПРЕЖДЕНИЙ ==========
-const warnings = new Map();
-
-// ========== ВСЕ КОМАНДЫ ==========
-const commands = [
-    // Новости
-    {
-        name: 'news',
-        description: 'Отправить новость с пингом в указанный канал',
-        options: [
-            { name: 'text', type: 3, required: true, description: 'Текст новости' },
-            { name: 'ping', type: 3, required: true, description: 'ID роли или @роль' },
-            { name: 'from_whom', type: 3, required: true, description: 'От кого новость' }
-        ]
-    },
-    // Баны
-    {
-        name: 'ban',
-        description: 'Забанить пользователя',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' },
-            { name: 'reason', type: 3, required: false, description: 'Причина' }
-        ]
-    },
-    {
-        name: 'unban',
-        description: 'Разбанить пользователя по ID',
-        options: [
-            { name: 'user_id', type: 3, required: true, description: 'ID пользователя' },
-            { name: 'reason', type: 3, required: false, description: 'Причина' }
-        ]
-    },
-    // Мьюты
-    {
-        name: 'mute',
-        description: 'Выдать мут пользователю',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' },
-            { name: 'duration', type: 3, required: true, description: 'Длительность (10m, 1h, 1d)' },
-            { name: 'reason', type: 3, required: false, description: 'Причина' }
-        ]
-    },
-    {
-        name: 'unmute',
-        description: 'Снять мут с пользователя',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' },
-            { name: 'reason', type: 3, required: false, description: 'Причина' }
-        ]
-    },
-    // Кики
-    {
-        name: 'kick',
-        description: 'Кикнуть пользователя',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' },
-            { name: 'reason', type: 3, required: false, description: 'Причина' }
-        ]
-    },
-    // Предупреждения
-    {
-        name: 'warn',
-        description: 'Выдать предупреждение',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' },
-            { name: 'reason', type: 3, required: true, description: 'Причина' }
-        ]
-    },
-    {
-        name: 'warnings',
-        description: 'Показать предупреждения пользователя',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' }
-        ]
-    },
-    {
-        name: 'clearwarnings',
-        description: 'Очистить предупреждения пользователя',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' }
-        ]
-    },
-    // Очистка чата
-    {
-        name: 'clear',
-        description: 'Очистить сообщения в канале',
-        options: [
-            { name: 'amount', type: 4, required: true, description: 'Количество сообщений (1-100)' }
-        ]
-    },
-    // Тайм-аут
-    {
-        name: 'timeout',
-        description: 'Выдать тайм-аут пользователю',
-        options: [
-            { name: 'user', type: 6, required: true, description: 'Пользователь' },
-            { name: 'duration', type: 3, required: true, description: 'Длительность (1m, 1h, 1d, 1w)' },
-            { name: 'reason', type: 3, required: false, description: 'Причина' }
-        ]
-    },
-    // Розыгрыши
-    {
-        name: 'giveaway',
-        description: 'Создать розыгрыш',
-        options: [
-            { name: 'channel', type: 7, required: true, description: 'Канал для розыгрыша' },
-            { name: 'duration', type: 3, required: true, description: 'Длительность (1h, 1d, 1w)' },
-            { name: 'winners', type: 4, required: true, description: 'Количество победителей' },
-            { name: 'prize', type: 3, required: true, description: 'Приз' },
-            { name: 'description', type: 3, required: false, description: 'Дополнительное описание' }
-        ]
-    },
-    {
-        name: 'reroll',
-        description: 'Перевыбрать победителя розыгрыша',
-        options: [
-            { name: 'message_id', type: 3, required: true, description: 'ID сообщения с розыгрышем' }
-        ]
-    },
-    {
-        name: 'endgiveaway',
-        description: 'Завершить розыгрыш досрочно',
-        options: [
-            { name: 'message_id', type: 3, required: true, description: 'ID сообщения с розыгрышем' }
-        ]
-    },
-    {
-        name: 'listgiveaways',
-        description: 'Показать активные розыгрыши на сервере'
-    },
-    // Бегемот
-    {
-        name: 'begemot',
-        description: 'Отправить сообщение от Бегемота в указанный канал с пингом @everyone',
-        options: [
-            { name: 'channel_id', type: 3, required: true, description: 'ID канала, куда отправить сообщение' }
-        ]
-    },
-    // Музыка
-    {
-        name: 'play',
-        description: 'Включить музыку по ссылке или названию',
-        options: [
-            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
-        ]
-    },
-    { name: 'skip', description: 'Пропустить текущий трек' },
-    { name: 'pause', description: 'Поставить музыку на паузу' },
-    { name: 'resume', description: 'Возобновить воспроизведение музыки' },
-    { name: 'stop', description: 'Остановить музыку и очистить очередь' }
-];
-
-// Регистрация команд
-const rest = new REST({ version: '10' }).setToken(TOKEN);
-
-(async () => {
-    try {
-        console.log('🔄 Регистрация команд...');
-        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('✅ Команды зарегистрированы!');
-    } catch (error) {
-        console.error('❌ Ошибка регистрации:', error);
-    }
-})();
-
-// ========== ФУНКЦИИ ЛОГОВ ==========
-async function sendLog(guild, action, target, moderator, reason, duration = null) {
-    const logChannelId = LOG_CHANNEL_ID;
-    
-    if (!logChannelId) {
-        console.log('⚠️ LOG_CHANNEL_ID не задан в переменных окружения');
-        return;
-    }
-    
-    const logChannel = guild.channels.cache.get(logChannelId);
-    if (!logChannel) {
-        console.log(`⚠️ Канал для логов ${logChannelId} не найден на сервере ${guild.name}`);
-        return;
-    }
-    
-    const botMember = guild.members.me;
-    if (!logChannel.permissionsFor(botMember).has(PermissionsBitField.Flags.SendMessages)) {
-        console.log(`⚠️ У бота нет прав писать в канал ${logChannel.name}`);
-        return;
-    }
-    
-    const embed = new EmbedBuilder()
-        .setTitle(getActionTitle(action))
-        .setColor(getActionColor(action))
-        .addFields(
-            { name: '👤 Пользователь', value: `${target.user?.tag || target.tag || target} (${target.id || target})`, inline: true },
-            { name: '🛡️ Модератор', value: `${moderator.user?.tag || moderator.tag}`, inline: true },
-            { name: '📝 Причина', value: reason || 'Не указана', inline: false }
-        )
-        .setTimestamp()
-        .setFooter({ text: `ID: ${target.id || target}` });
-    
-    if (duration) {
-        embed.addFields({ name: '⏱️ Длительность', value: duration, inline: true });
-    }
-    
-    try {
-        await logChannel.send({ embeds: [embed] });
-        console.log(`✅ Лог отправлен в канал ${logChannel.name}`);
-    } catch (error) {
-        console.error(`❌ Ошибка отправки лога: ${error.message}`);
-    }
-}
-
-function getActionTitle(action) {
-    const titles = {
-        'Бан': '🔨 БАН',
-        'Разбан': '🔓 РАЗБАН',
-        'Кик': '👢 КИК',
-        'Мут': '🔇 МУТ',
-        'Размут': '🔊 СНЯТИЕ МУТА',
-        'Предупреждение': '⚠️ ПРЕДУПРЕЖДЕНИЕ',
-        'Тайм-аут': '⏰ ТАЙМ-АУТ',
-        'Очистка чата': '🧹 ОЧИСТКА ЧАТА',
-        'Очистка предупреждений': '🗑️ ОЧИСТКА ПРЕДУПРЕЖДЕНИЙ'
-    };
-    return titles[action] || `🔨 ${action}`;
-}
-
-function getActionColor(action) {
-    const colors = {
-        'Бан': 0xFF0000,
-        'Разбан': 0x00FF00,
-        'Мут': 0xFFA500,
-        'Размут': 0x00FF00,
-        'Кик': 0xFF0000,
-        'Предупреждение': 0xFFA500,
-        'Тайм-аут': 0xFFA500,
-        'Очистка чата': 0x00AAFF
-    };
-    return colors[action] || 0x5865F2;
-}
-
-function hasModPermissions(member) {
-    return member.permissions.has(PermissionsBitField.Flags.ModerateMembers) ||
-           member.permissions.has(PermissionsBitField.Flags.Administrator);
-}
-
-// ========== ЗАПУСК БОТА ==========
-client.once('ready', () => {
-    console.log(`✅ Бот ${client.user.tag} запущен!`);
-    console.log(`📢 Канал для новостей: ${TARGET_CHANNEL_ID}`);
-    console.log(`📋 Канал для логов: ${LOG_CHANNEL_ID || 'не задан'}`);
+    console.log(`📢 Канал новостей: ${TARGET_CHANNEL_ID}`);
+    console.log(`📋 Канал логов: ${LOG_CHANNEL_ID || 'не задан'}`);
 });
 
 // ========== ОБРАБОТЧИК КОМАНД ==========
@@ -738,7 +305,7 @@ client.on('interactionCreate', async (interaction) => {
         const roleMention = /^\d+$/.test(ping) ? `<@&${ping}>` : ping;
         
         const embed = new EmbedBuilder()
-            .setTitle('📢 Новость / Объявление')
+            .setTitle('📢 Новость')
             .setDescription(text)
             .setColor(0x5865F2)
             .addFields(
@@ -748,91 +315,13 @@ client.on('interactionCreate', async (interaction) => {
             .setTimestamp();
         
         await targetChannel.send({ content: roleMention, embeds: [embed] });
-        interaction.reply({ content: `✅ Новость отправлена в ${targetChannel.toString()}`, ephemeral: true });
+        interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
     }
 
-    // ========== МУЗЫКА ==========
-    if (commandName === 'play') {
-        if (!member.voice.channel) {
-            return interaction.reply({ content: '❌ Вы должны находиться в голосовом канале, чтобы включить музыку!', ephemeral: true });
-        }
-
-        const query = options.getString('query');
-        await interaction.deferReply();
-
-        try {
-            let queue = client.player.getQueue(guild.id);
-            
-            if (!queue) {
-                queue = client.player.createQueue(guild.id, {
-                    metadata: { channel: interaction.channel }
-                });
-                await queue.join(member.voice.channel);
-            }
-            
-            const song = await queue.play(query).catch(err => {
-                console.error(err);
-                return null;
-            });
-            
-            if (!song) {
-                return interaction.editReply('❌ Не удалось найти или воспроизвести трек. Проверьте ссылку или название.');
-            }
-            
-            if (queue.tracks.length > 0) {
-                return interaction.editReply(`➕ **${song.title}** добавлен в очередь. Позиция: ${queue.tracks.length}`);
-            } else {
-                return interaction.editReply(`🎵 Начинаю играть: **${song.title}**`);
-            }
-        } catch (error) {
-            console.error('Ошибка при воспроизведении:', error);
-            return interaction.editReply(`❌ Произошла ошибка при попытке воспроизведения: ${error.message}`);
-        }
-    }
-
-    if (commandName === 'skip') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        queue.skip();
-        return interaction.reply('⏭ Трек пропущен!');
-    }
-
-    if (commandName === 'pause') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        queue.setPaused(true);
-        return interaction.reply('⏸ Музыка на паузе.');
-    }
-
-    if (commandName === 'resume') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue || !queue.isPlaying) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        queue.setPaused(false);
-        return interaction.reply('▶ Воспроизведение возобновлено.');
-    }
-
-    if (commandName === 'stop') {
-        const queue = client.player.getQueue(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        queue.stop();
-        return interaction.reply('🛑 Воспроизведение остановлено, бот отключен от голосового канала.');
-    }
-
-    // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
+    // ========== ПРОВЕРКА ПРАВ ==========
     if (['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'clearwarnings', 'timeout', 'clear'].includes(commandName)) {
         if (!hasModPermissions(member)) {
-            return interaction.reply({ 
-                content: '❌ У вас нет прав на использование этой команды (нужны права "Модерировать участников")', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ Недостаточно прав!', ephemeral: true });
         }
     }
 
@@ -841,17 +330,10 @@ client.on('interactionCreate', async (interaction) => {
         const targetUser = options.getUser('user');
         const reason = options.getString('reason') || 'Не указана';
         
-        if (!targetUser) return interaction.reply({ content: '❌ Пользователь не найден', ephemeral: true });
-        
         try {
-            const targetMember = await guild.members.fetch(targetUser.id);
-            if (targetMember && !targetMember.bannable) {
-                return interaction.reply({ content: '❌ Я не могу забанить этого пользователя', ephemeral: true });
-            }
-            
             await guild.members.ban(targetUser.id, { reason: `${reason} (Модератор: ${user.tag})` });
             await sendLog(guild, 'Бан', targetUser, user, reason);
-            interaction.reply({ content: `✅ ${targetUser.tag} забанен. Причина: ${reason}`, ephemeral: true });
+            interaction.reply({ content: `✅ ${targetUser.tag} забанен`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -872,7 +354,7 @@ client.on('interactionCreate', async (interaction) => {
             
             await guild.members.unban(userId, reason);
             await sendLog(guild, 'Разбан', bannedUser.user, user, reason);
-            interaction.reply({ content: `✅ Пользователь ${bannedUser.user.tag} разбанен`, ephemeral: true });
+            interaction.reply({ content: `✅ ${bannedUser.user.tag} разбанен`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -885,14 +367,9 @@ client.on('interactionCreate', async (interaction) => {
         
         try {
             const targetMember = await guild.members.fetch(targetUser.id);
-            
-            if (!targetMember.kickable) {
-                return interaction.reply({ content: '❌ Я не могу кикнуть этого пользователя', ephemeral: true });
-            }
-            
             await targetMember.kick(`${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Кик', targetUser, user, reason);
-            interaction.reply({ content: `✅ ${targetUser.tag} кикнут. Причина: ${reason}`, ephemeral: true });
+            interaction.reply({ content: `✅ ${targetUser.tag} кикнут`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -904,64 +381,19 @@ client.on('interactionCreate', async (interaction) => {
         const duration = options.getString('duration');
         const reason = options.getString('reason') || 'Не указана';
         
-        const botMember = interaction.guild.members.me;
-        if (!botMember.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-            return interaction.reply({ 
-                content: '❌ У бота нет права "Модерировать участников"! Выдайте боту эту роль.', 
-                ephemeral: true 
-            });
-        }
-        
         try {
-            const targetMember = await interaction.guild.members.fetch(targetUser.id);
-            
-            if (!targetMember.moderatable) {
-                return interaction.reply({ 
-                    content: '❌ Я не могу замутить этого пользователя. Возможно, его роль выше моей.', 
-                    ephemeral: true 
-                });
-            }
-            
+            const targetMember = await guild.members.fetch(targetUser.id);
             const msDuration = ms(duration);
             
-            if (!msDuration) {
-                return interaction.reply({ 
-                    content: '❌ Неверный формат длительности. Используй: 10m, 1h, 1d, 1w', 
-                    ephemeral: true 
-                });
+            if (!msDuration || msDuration < 60000) {
+                return interaction.reply({ content: '❌ Минимум 1 минута', ephemeral: true });
             }
             
-            if (msDuration < 60000) {
-                return interaction.reply({ 
-                    content: '❌ Минимальная длительность мута - 1 минута', 
-                    ephemeral: true 
-                });
-            }
-            
-            if (msDuration > 28 * 24 * 60 * 60 * 1000) {
-                return interaction.reply({ 
-                    content: '❌ Максимальная длительность мута - 28 дней', 
-                    ephemeral: true 
-                });
-            }
-            
-            await targetMember.timeout(msDuration, `${reason} (Модератор: ${interaction.user.tag})`);
-            await sendLog(interaction.guild, 'Мут', targetUser, interaction.user, reason, duration);
-            
-            try {
-                await targetUser.send(`🔇 Вы получили мут на сервере **${interaction.guild.name}**\nДлительность: ${duration}\nПричина: ${reason}`);
-            } catch (e) {}
-            
-            await interaction.reply({ 
-                content: `✅ ${targetUser.tag} получил мут на **${duration}**. Причина: ${reason}`, 
-                ephemeral: true 
-            });
+            await targetMember.timeout(msDuration, `${reason} (Модератор: ${user.tag})`);
+            await sendLog(guild, 'Мут', targetUser, user, reason, duration);
+            interaction.reply({ content: `✅ ${targetUser.tag} замучен на ${duration}`, ephemeral: true });
         } catch (error) {
-            console.error('Ошибка мута:', error);
-            await interaction.reply({ 
-                content: `❌ Ошибка: ${error.message}`, 
-                ephemeral: true 
-            });
+            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
@@ -991,12 +423,12 @@ client.on('interactionCreate', async (interaction) => {
             const msDuration = ms(duration);
             
             if (!msDuration) {
-                return interaction.reply({ content: '❌ Неверный формат длительности (1m, 1h, 1d, 1w)', ephemeral: true });
+                return interaction.reply({ content: '❌ Неверный формат (1m, 1h, 1d)', ephemeral: true });
             }
             
             await targetMember.timeout(msDuration, `${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Тайм-аут', targetUser, user, reason, duration);
-            interaction.reply({ content: `✅ ${targetUser.tag} получил тайм-аут на ${duration}`, ephemeral: true });
+            interaction.reply({ content: `✅ Тайм-аут ${targetUser.tag} на ${duration}`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
@@ -1008,25 +440,19 @@ client.on('interactionCreate', async (interaction) => {
         const reason = options.getString('reason');
         
         const key = `${guild.id}-${targetUser.id}`;
-        if (!warnings.has(key)) {
-            warnings.set(key, []);
-        }
+        if (!warnings.has(key)) warnings.set(key, []);
         
         const userWarnings = warnings.get(key);
-        userWarnings.push({
-            reason: reason,
-            moderator: user.tag,
-            date: new Date().toISOString()
-        });
+        userWarnings.push({ reason, moderator: user.tag, date: new Date().toISOString() });
         warnings.set(key, userWarnings);
         
         await sendLog(guild, 'Предупреждение', targetUser, user, reason);
         
         try {
-            await targetUser.send(`⚠️ Вы получили предупреждение на сервере **${guild.name}**\nПричина: ${reason}\nВсего предупреждений: ${userWarnings.length}`);
+            await targetUser.send(`⚠️ Предупреждение на ${guild.name}\nПричина: ${reason}\nВсего: ${userWarnings.length}`);
         } catch (e) {}
         
-        interaction.reply({ content: `⚠️ Выдано предупреждение ${targetUser.tag}. Причина: ${reason} (Всего: ${userWarnings.length})`, ephemeral: true });
+        interaction.reply({ content: `⚠️ Предупреждение ${targetUser.tag}. Причина: ${reason} (${userWarnings.length})`, ephemeral: true });
     }
 
     // ========== ПОКАЗАТЬ ПРЕДУПРЕЖДЕНИЯ ==========
@@ -1036,12 +462,10 @@ client.on('interactionCreate', async (interaction) => {
         const userWarnings = warnings.get(key) || [];
         
         if (userWarnings.length === 0) {
-            return interaction.reply({ content: `✅ У ${targetUser.tag} нет предупреждений`, ephemeral: true });
+            return interaction.reply({ content: `✅ Нет предупреждений у ${targetUser.tag}`, ephemeral: true });
         }
         
-        const warnList = userWarnings.map((w, i) => 
-            `${i + 1}. **${w.reason}** — ${w.moderator} (${new Date(w.date).toLocaleString()})`
-        ).join('\n');
+        const warnList = userWarnings.map((w, i) => `${i+1}. ${w.reason} — ${w.moderator} (${new Date(w.date).toLocaleString()})`).join('\n');
         
         const embed = new EmbedBuilder()
             .setTitle(`⚠️ Предупреждения ${targetUser.tag}`)
@@ -1058,12 +482,12 @@ client.on('interactionCreate', async (interaction) => {
         const key = `${guild.id}-${targetUser.id}`;
         
         if (!warnings.has(key)) {
-            return interaction.reply({ content: `❌ У ${targetUser.tag} нет предупреждений`, ephemeral: true });
+            return interaction.reply({ content: `❌ Нет предупреждений у ${targetUser.tag}`, ephemeral: true });
         }
         
         warnings.delete(key);
         await sendLog(guild, 'Очистка предупреждений', targetUser, user, 'Все предупреждения удалены');
-        interaction.reply({ content: `✅ Очищены все предупреждения для ${targetUser.tag}`, ephemeral: true });
+        interaction.reply({ content: `✅ Очищены предупреждения ${targetUser.tag}`, ephemeral: true });
     }
 
     // ========== ОЧИСТКА ЧАТА ==========
@@ -1071,7 +495,7 @@ client.on('interactionCreate', async (interaction) => {
         const amount = options.getInteger('amount');
         
         if (amount < 1 || amount > 100) {
-            return interaction.reply({ content: '❌ Количество сообщений должно быть от 1 до 100', ephemeral: true });
+            return interaction.reply({ content: '❌ От 1 до 100 сообщений', ephemeral: true });
         }
         
         try {
@@ -1087,40 +511,26 @@ client.on('interactionCreate', async (interaction) => {
     if (commandName === 'giveaway') {
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
             !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return interaction.reply({ 
-                content: '❌ У вас нет прав на создание розыгрышей (нужны права "Управление сервером")', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ Нужны права "Управление сервером"', ephemeral: true });
         }
         
         const channel = options.getChannel('channel');
         const durationRaw = options.getString('duration');
         const winners = options.getInteger('winners');
         const prize = options.getString('prize');
-        const description = options.getString('description') || 'Нажми на 🎉, чтобы участвовать!';
+        const description = options.getString('description') || 'Нажми на 🎉!';
         
         if (!channel.isTextBased()) {
-            return interaction.reply({ content: '❌ Канал должен быть текстовым!', ephemeral: true });
+            return interaction.reply({ content: '❌ Канал должен быть текстовым', ephemeral: true });
         }
         
         const durationMs = ms(durationRaw);
-        if (!durationMs) {
-            return interaction.reply({ 
-                content: '❌ Неверный формат длительности! Примеры: 10m, 1h, 1d, 1w', 
-                ephemeral: true 
-            });
-        }
-        
-        if (durationMs < 60000) {
-            return interaction.reply({ content: '❌ Минимальная длительность розыгрыша - 1 минута!', ephemeral: true });
+        if (!durationMs || durationMs < 60000) {
+            return interaction.reply({ content: '❌ Минимум 1 минута', ephemeral: true });
         }
         
         if (winners < 1 || winners > 10) {
-            return interaction.reply({ content: '❌ Количество победителей должно быть от 1 до 10!', ephemeral: true });
-        }
-        
-        if (prize.length > 100) {
-            return interaction.reply({ content: '❌ Название приза не должно превышать 100 символов!', ephemeral: true });
+            return interaction.reply({ content: '❌ Победителей: 1-10', ephemeral: true });
         }
         
         try {
@@ -1133,108 +543,50 @@ client.on('interactionCreate', async (interaction) => {
                 messages: {
                     giveaway: '🎉 **РОЗЫГРЫШ** 🎉',
                     giveawayEnded: '🎉 **РОЗЫГРЫШ ЗАВЕРШЁН** 🎉',
-                    invitation: 'Реагируй на 🎉 для участия!',
-                    drawing: 'Осталось времени: {timestamp}',
+                    invitation: 'Реагируй на 🎉!',
+                    drawing: 'Осталось: {timestamp}',
                     embedFooter: `Создал: ${interaction.user.tag}`,
-                    noWinner: '❌ Недостаточно участников, победитель не выбран.',
+                    noWinner: '❌ Недостаточно участников',
                     winners: '🏆 Победитель(и):',
                     endedAt: 'Завершён'
                 }
             });
             
-            await interaction.reply({ 
-                content: `✅ Розыгрыш **${prize}** создан в канале ${channel}!`, 
-                ephemeral: true 
-            });
-            
-            if (LOG_CHANNEL_ID) {
-                const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-                if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setTitle('🎉 СОЗДАН РОЗЫГРЫШ')
-                        .setColor(0x00AE86)
-                        .addFields(
-                            { name: '🎁 Приз', value: prize, inline: true },
-                            { name: '👑 Победителей', value: `${winners}`, inline: true },
-                            { name: '⏱️ Длительность', value: durationRaw, inline: true },
-                            { name: '📢 Канал', value: channel.toString(), inline: true },
-                            { name: '👤 Создал', value: interaction.user.tag, inline: true }
-                        )
-                        .setTimestamp();
-                    await logChannel.send({ embeds: [logEmbed] });
-                }
-            }
+            interaction.reply({ content: `✅ Розыгрыш "${prize}" в ${channel}`, ephemeral: true });
         } catch (error) {
-            console.error('Ошибка создания розыгрыша:', error);
-            await interaction.reply({ 
-                content: `❌ Ошибка при создании розыгрыша: ${error.message}`, 
-                ephemeral: true 
-            });
+            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
     if (commandName === 'reroll') {
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
             !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return interaction.reply({ 
-                content: '❌ У вас нет прав на перевыбор победителя!', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ Недостаточно прав', ephemeral: true });
         }
         
         const messageId = options.getString('message_id');
         
         try {
             await client.giveawaysManager.reroll(messageId);
-            await interaction.reply({ 
-                content: '✅ Победитель перевыбран!', 
-                ephemeral: true 
-            });
-            
-            if (LOG_CHANNEL_ID) {
-                const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-                if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setTitle('🔄 ПЕРЕВЫБОР ПОБЕДИТЕЛЯ')
-                        .setColor(0xFFA500)
-                        .addFields(
-                            { name: '🆔 ID сообщения', value: messageId, inline: true },
-                            { name: '👤 Модератор', value: interaction.user.tag, inline: true }
-                        )
-                        .setTimestamp();
-                    await logChannel.send({ embeds: [logEmbed] });
-                }
-            }
+            interaction.reply({ content: '✅ Победитель перевыбран', ephemeral: true });
         } catch (error) {
-            await interaction.reply({ 
-                content: `❌ Ошибка: розыгрыш с ID ${messageId} не найден или уже завершён!`, 
-                ephemeral: true 
-            });
+            interaction.reply({ content: '❌ Розыгрыш не найден', ephemeral: true });
         }
     }
 
     if (commandName === 'endgiveaway') {
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
             !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            return interaction.reply({ 
-                content: '❌ У вас нет прав на завершение розыгрыша!', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ Недостаточно прав', ephemeral: true });
         }
         
         const messageId = options.getString('message_id');
         
         try {
             await client.giveawaysManager.end(messageId);
-            await interaction.reply({ 
-                content: '✅ Розыгрыш завершён!', 
-                ephemeral: true 
-            });
+            interaction.reply({ content: '✅ Розыгрыш завершён', ephemeral: true });
         } catch (error) {
-            await interaction.reply({ 
-                content: `❌ Ошибка: розыгрыш с ID ${messageId} не найден или уже завершён!`, 
-                ephemeral: true 
-            });
+            interaction.reply({ content: '❌ Розыгрыш не найден', ephemeral: true });
         }
     }
 
@@ -1244,68 +596,42 @@ client.on('interactionCreate', async (interaction) => {
         );
         
         if (activeGiveaways.length === 0) {
-            return interaction.reply({ 
-                content: '📭 На этом сервере нет активных розыгрышей.', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '📭 Нет активных розыгрышей', ephemeral: true });
         }
         
-        const giveawayList = activeGiveaways.map((g, i) => 
-            `${i + 1}. **${g.prize}** - в канале <#${g.channelId}> (участников: ${g.participantsCount || 0})`
-        ).join('\n');
+        const list = activeGiveaways.map((g, i) => `${i+1}. **${g.prize}** — <#${g.channelId}> (участников: ${g.participantsCount || 0})`).join('\n');
         
         const embed = new EmbedBuilder()
             .setTitle('🎁 Активные розыгрыши')
-            .setDescription(giveawayList)
-            .setColor(0x00AE86)
-            .setFooter({ text: `Всего: ${activeGiveaways.length}` });
+            .setDescription(list)
+            .setColor(0x00AE86);
         
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // ========== КОМАНДА БЕГЕМОТ ==========
+    // ========== БЕГЕМОТ ==========
     if (commandName === 'begemot') {
         const targetChannelId = options.getString('channel_id');
         
         if (!targetChannelId || !/^\d+$/.test(targetChannelId)) {
-            return interaction.reply({ 
-                content: '❌ Укажите корректный ID канала! Например: `123456789012345678`\n\nКак получить ID канала: Настройки Discord → Дополнительно → Режим разработчика → ПКМ по каналу → Копировать ID', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ Укажите ID канала', ephemeral: true });
         }
         
         const targetChannel = client.channels.cache.get(targetChannelId);
         
         if (!targetChannel) {
-            return interaction.reply({ 
-                content: `❌ Канал с ID \`${targetChannelId}\` не найден! Убедись, что:\n1. ID указан верно\n2. Бот имеет доступ к этому каналу\n3. Канал существует на этом сервере`, 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: `❌ Канал ${targetChannelId} не найден`, ephemeral: true });
         }
         
         if (!targetChannel.isTextBased()) {
-            return interaction.reply({ 
-                content: '❌ Указанный канал должен быть текстовым!', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ Канал должен быть текстовым', ephemeral: true });
         }
         
         const messageText = `**🦛 БЕГЕМОТ ГОВОРИТ:**\n\nПривет всем! Я большой и добрый бегемот! 🦛\nНе забывайте улыбаться и радоваться жизни! ❤️\n\n*С любовью, ваш Бегемот*`;
         
         const botMember = interaction.guild.members.me;
         if (!botMember.permissions.has(PermissionsBitField.Flags.MentionEveryone)) {
-            return interaction.reply({ 
-                content: '❌ У бота нет права упоминать @everyone! Выдайте боту право "Упоминать @everyone и @here".\n\nИнструкция: Настройки сервера → Роли → Роль бота → Включить "Упоминать @everyone и @here"', 
-                ephemeral: true 
-            });
-        }
-        
-        const channelPermissions = targetChannel.permissionsFor(botMember);
-        if (!channelPermissions || !channelPermissions.has(PermissionsBitField.Flags.SendMessages)) {
-            return interaction.reply({ 
-                content: `❌ У бота нет права отправлять сообщения в канал ${targetChannel.toString()}!`, 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ У бота нет права @everyone', ephemeral: true });
         }
         
         try {
@@ -1314,32 +640,9 @@ client.on('interactionCreate', async (interaction) => {
                 allowedMentions: { parse: ['everyone'] }
             });
             
-            await interaction.reply({ 
-                content: `✅ Сообщение от Бегемота отправлено в канал ${targetChannel.toString()} с @everyone!`, 
-                ephemeral: true 
-            });
-            
-            if (LOG_CHANNEL_ID) {
-                const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-                if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setTitle('🦛 КОМАНДА БЕГЕМОТ')
-                        .setColor(0xFFA500)
-                        .addFields(
-                            { name: '👤 Использовал', value: interaction.user.tag, inline: true },
-                            { name: '📢 Целевой канал', value: targetChannel.toString(), inline: true },
-                            { name: '🆔 ID канала', value: targetChannelId, inline: true }
-                        )
-                        .setTimestamp();
-                    await logChannel.send({ embeds: [logEmbed] });
-                }
-            }
+            interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
         } catch (error) {
-            console.error('Ошибка команды begemot:', error);
-            await interaction.reply({ 
-                content: `❌ Ошибка при отправке сообщения: ${error.message}`, 
-                ephemeral: true 
-            });
+            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 });
