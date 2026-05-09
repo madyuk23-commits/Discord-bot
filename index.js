@@ -1,7 +1,7 @@
 const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
-const { GiveawaysManager } = require('discord-giveaways'); // ИСПРАВЛЕНО!
+const { GiveawaysManager } = require('discord-giveaways');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,8 +12,8 @@ app.listen(PORT, () => console.log(`✅ Веб-сервер на порту ${PO
 // ===== НАСТРОЙКИ =====
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID; // Канал для новостей
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;       // Канал для логов модерации
+const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 // =====================
 
 const client = new Client({
@@ -21,7 +21,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers  // Нужен для модерации
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessageReactions
     ]
 });
