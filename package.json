@@ -9,6 +9,6 @@
     "discord.js": "^14.14.1",
     "express": "^4.18.2",
     "ms": "^2.1.3",
-    "discord-giveaways": "^6.0.1"
+    "discord-regiveaways": "^1.0.0"
   }
 }
