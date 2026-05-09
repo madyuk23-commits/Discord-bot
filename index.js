@@ -389,16 +389,20 @@ client.on('interactionCreate', async (interaction) => {
         interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
     }
 
-    // ========== МУЗЫКА ==========
+// ========== МУЗЫКА (ИСПРАВЛЕННЫЙ БЛОК КОМАНДЫ 'play') ==========
     if (commandName === 'play') {
+        // 1. Проверяем, находится ли пользователь в голосовом канале
         if (!member.voice.channel) {
             return interaction.reply({ content: '❌ Вы должны быть в голосовом канале!', ephemeral: true });
         }
 
         const query = options.getString('query');
+        // Сообщаем Discord, что бот начал обработку
         await interaction.deferReply();
 
         try {
+            // 2. Самая важная часть: запускаем воспроизведение.
+            //    Библиотека сама найдёт и загрузит трек с YouTube.
             const { track } = await player.play(member.voice.channel, query, {
                 requestedBy: interaction.user,
                 nodeOptions: {
@@ -409,86 +413,16 @@ client.on('interactionCreate', async (interaction) => {
                 }
             });
 
+            // 3. Отправляем сообщение об успехе
             return interaction.editReply(`🎵 **${track.title}** добавлен в очередь!`);
         } catch (error) {
+            // 4. Обрабатываем возможные ошибки
             console.error('Ошибка play:', error);
             return interaction.editReply(`❌ Ошибка: ${error.message}`);
         }
     }
-
-    if (commandName === 'skip') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.node.skip();
-        interaction.reply('⏭ Трек пропущен!');
-    }
-
-    if (commandName === 'stop') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        
-        queue.delete();
-        interaction.reply('🛑 Воспроизведение остановлено, очередь очищена.');
-    }
-
-    if (commandName === 'pause') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.node.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.node.setPaused(true);
-        interaction.reply('⏸ Музыка на паузе.');
-    }
-
-    if (commandName === 'resume') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.node.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.node.setPaused(false);
-        interaction.reply('▶ Воспроизведение возобновлено.');
-    }
-
-    if (commandName === 'queue') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.tracks.size) {
-            return interaction.reply({ content: '📭 Очередь пуста.', ephemeral: true });
-        }
-        
-        const tracksList = queue.tracks.map((track, i) => `${i + 1}. **${track.title}**`).slice(0, 10).join('\n');
-        const currentTrack = queue.currentTrack;
-        
-        const embed = new EmbedBuilder()
-            .setTitle('🎵 Текущая очередь')
-            .setDescription(`**Сейчас играет:** ${currentTrack ? currentTrack.title : 'Нет'}\n\n**Очередь:**\n${tracksList || 'Пусто'}`)
-            .setColor(0x00AE86)
-            .setFooter({ text: `Всего треков: ${queue.tracks.size}` });
-        
-        interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    if (commandName === 'volume') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        
-        const level = options.getInteger('level');
-        if (level < 0 || level > 100) {
-            return interaction.reply({ content: '❌ Громкость должна быть от 0 до 100!', ephemeral: true });
-        }
-        
-        queue.node.setVolume(level);
-        interaction.reply(`🔊 Громкость установлена на **${level}%**`);
-    }
-
+   
+    
     // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
     if (['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'clearwarnings', 'timeout', 'clear'].includes(commandName)) {
         if (!hasModPermissions(member)) {
