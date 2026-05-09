@@ -1,7 +1,7 @@
 const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
-const { GiveawaysManager } = require('giveaways');
+const { GiveawaysManager } = require('discord-giveaways'); // ИСПРАВЛЕНО!
 
 const app = express();
 const PORT = process.env.PORT || 3000;
