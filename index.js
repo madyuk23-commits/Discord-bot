@@ -3,7 +3,6 @@ const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitFie
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
 const { Player } = require('discord-player');
-const { DefaultExtractors } = require('@discord-player/extractor');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,7 +17,7 @@ const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 // =====================
 
-// ✅ ПРАВИЛЬНЫЕ INTENTS (ВСЕ 6)
+// ✅ ПРАВИЛЬНЫЕ INTENTS
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -26,11 +25,11 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReactions  // ← ИСПРАВЛЕНО!
+        GatewayIntentBits.GuildMessageReactions
     ]
 });
 
-// ========== МУЗЫКАЛЬНАЯ СИСТЕМА ==========
+// ========== МУЗЫКАЛЬНАЯ СИСТЕМА (ИСПРАВЛЕНА) ==========
 const player = new Player(client, {
     leaveOnEmpty: true,
     leaveOnEnd: true,
@@ -40,11 +39,9 @@ const player = new Player(client, {
 
 client.player = player;
 
-// Загрузка экстракторов
-(async () => {
-    await player.extractors.loadMulti(DefaultExtractors);
-    console.log('✅ Музыкальные экстракторы загружены');
-})();
+// Упрощённая загрузка экстракторов (без ошибок)
+player.extractors.registerDefault();
+console.log('✅ Музыкальные экстракторы загружены');
 
 // События музыкального плеера
 player.events.on('playerStart', (queue, track) => {
