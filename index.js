@@ -3,6 +3,8 @@ const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitFie
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
 const noblox = require('noblox.js');
+const { Player } = require('discord-player');
+const { YoutubeiExtractor } = require('discord-player-youtubei');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +29,47 @@ const client = new Client({
         GatewayIntentBits.GuildMessageReactions
     ]
 });
+
+// ========== МУЗЫКАЛЬНАЯ СИСТЕМА ==========
+const player = new Player(client, {
+    leaveOnEmpty: true,
+    leaveOnEnd: true,
+    leaveOnStop: true,
+    volume: 50
+});
+
+client.player = player;
+
+// Добавляем экстрактор для YouTube
+(async () => {
+    await player.extractors.register(YoutubeiExtractor, {});
+    console.log('✅ Музыкальная система загружена (YouTube)');
+})();
+
+// События плеера
+player.events.on('playerStart', (queue, track) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.title}**`);
+    }
+});
+
+player.events.on('queueEnd', (queue) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`📭 Очередь закончилась. Отключаюсь...`);
+    }
+});
+
+player.events.on('error', (error) => {
+    console.error(`❌ Ошибка плеера: ${error.message}`);
+});
+
+player.events.on('playerError', (queue, error) => {
+    console.error(`❌ Ошибка воспроизведения: ${error.message}`);
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`❌ Ошибка: ${error.message}`);
+    }
+});
+// ========================================
 
 // ========== СИСТЕМА РОЗЫГРЫШЕЙ ==========
 const GiveawayManager = new GiveawaysManager(client, {
@@ -204,6 +247,26 @@ const commands = [
         options: [
             { name: 'username', type: 3, required: true, description: 'Имя пользователя Roblox' }
         ]
+    },
+    // Музыка
+    {
+        name: 'play',
+        description: 'Включить музыку по ссылке или названию',
+        options: [
+            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
+        ]
+    },
+    { name: 'skip', description: 'Пропустить текущий трек' },
+    { name: 'stop', description: 'Остановить музыку и очистить очередь' },
+    { name: 'pause', description: 'Поставить музыку на паузу' },
+    { name: 'resume', description: 'Возобновить воспроизведение музыки' },
+    { name: 'queue', description: 'Показать текущую очередь треков' },
+    {
+        name: 'volume',
+        description: 'Изменить громкость',
+        options: [
+            { name: 'level', type: 4, required: true, description: 'Громкость от 0 до 100' }
+        ]
     }
 ];
 
@@ -290,6 +353,7 @@ client.once('ready', () => {
     console.log(`📢 Канал новостей: ${TARGET_CHANNEL_ID}`);
     console.log(`📋 Канал логов: ${LOG_CHANNEL_ID || 'не задан'}`);
     console.log(`🎮 Roblox команда /roblox загружена!`);
+    console.log(`🎵 Музыкальная система загружена!`);
 });
 
 // ========== ОБРАБОТЧИК КОМАНД ==========
@@ -323,6 +387,106 @@ client.on('interactionCreate', async (interaction) => {
         
         await targetChannel.send({ content: roleMention, embeds: [embed] });
         interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
+    }
+
+    // ========== МУЗЫКА ==========
+    if (commandName === 'play') {
+        if (!member.voice.channel) {
+            return interaction.reply({ content: '❌ Вы должны быть в голосовом канале!', ephemeral: true });
+        }
+
+        const query = options.getString('query');
+        await interaction.deferReply();
+
+        try {
+            const { track } = await player.play(member.voice.channel, query, {
+                requestedBy: interaction.user,
+                nodeOptions: {
+                    metadata: { channel: interaction.channel },
+                    volume: 50,
+                    leaveOnEmpty: true,
+                    leaveOnEnd: true
+                }
+            });
+
+            return interaction.editReply(`🎵 **${track.title}** добавлен в очередь!`);
+        } catch (error) {
+            console.error('Ошибка play:', error);
+            return interaction.editReply(`❌ Ошибка: ${error.message}`);
+        }
+    }
+
+    if (commandName === 'skip') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.isPlaying()) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.node.skip();
+        interaction.reply('⏭ Трек пропущен!');
+    }
+
+    if (commandName === 'stop') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue) {
+            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
+        }
+        
+        queue.delete();
+        interaction.reply('🛑 Воспроизведение остановлено, очередь очищена.');
+    }
+
+    if (commandName === 'pause') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.node.isPlaying()) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.node.setPaused(true);
+        interaction.reply('⏸ Музыка на паузе.');
+    }
+
+    if (commandName === 'resume') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.node.isPlaying()) {
+            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
+        }
+        
+        queue.node.setPaused(false);
+        interaction.reply('▶ Воспроизведение возобновлено.');
+    }
+
+    if (commandName === 'queue') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue || !queue.tracks.size) {
+            return interaction.reply({ content: '📭 Очередь пуста.', ephemeral: true });
+        }
+        
+        const tracksList = queue.tracks.map((track, i) => `${i + 1}. **${track.title}**`).slice(0, 10).join('\n');
+        const currentTrack = queue.currentTrack;
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎵 Текущая очередь')
+            .setDescription(`**Сейчас играет:** ${currentTrack ? currentTrack.title : 'Нет'}\n\n**Очередь:**\n${tracksList || 'Пусто'}`)
+            .setColor(0x00AE86)
+            .setFooter({ text: `Всего треков: ${queue.tracks.size}` });
+        
+        interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    if (commandName === 'volume') {
+        const queue = player.nodes.get(guild.id);
+        if (!queue) {
+            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
+        }
+        
+        const level = options.getInteger('level');
+        if (level < 0 || level > 100) {
+            return interaction.reply({ content: '❌ Громкость должна быть от 0 до 100!', ephemeral: true });
+        }
+        
+        queue.node.setVolume(level);
+        interaction.reply(`🔊 Громкость установлена на **${level}%**`);
     }
 
     // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
