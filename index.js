@@ -2,7 +2,7 @@ const express = require('express');
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
 const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
-const { Player } = require('discord-player');
+const roblox = require('roblox-api-discord');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,39 +27,6 @@ const client = new Client({
         GatewayIntentBits.GuildMessageReactions
     ]
 });
-
-// ========== МУЗЫКАЛЬНАЯ СИСТЕМА (УПРОЩЁННАЯ) ==========
-const player = new Player(client, {
-    leaveOnEmpty: true,
-    leaveOnEnd: true,
-    leaveOnStop: true,
-    volume: 50
-});
-
-client.player = player;
-
-// События музыкального плеера
-player.events.on('playerStart', (queue, track) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.cleanTitle || track.title}**`);
-    }
-});
-
-player.events.on('queueEnd', (queue) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`📭 Очередь закончилась. Отключаюсь...`);
-    }
-});
-
-player.events.on('playerError', (queue, error) => {
-    console.error(`❌ Ошибка воспроизведения: ${error.message}`);
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`❌ Ошибка воспроизведения: ${error.message}`);
-    }
-});
-
-console.log('✅ Музыкальная система загружена');
-// ========================================
 
 // ========== СИСТЕМА РОЗЫГРЫШЕЙ ==========
 const GiveawayManager = new GiveawaysManager(client, {
@@ -230,39 +197,12 @@ const commands = [
             { name: 'channel_id', type: 3, required: true, description: 'ID канала, куда отправить сообщение' }
         ]
     },
-    // Музыка
+    // Roblox
     {
-        name: 'play',
-        description: 'Включить музыку по ссылке или названию',
+        name: 'roblox',
+        description: 'Получить информацию о пользователе Roblox',
         options: [
-            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
-        ]
-    },
-    {
-        name: 'skip',
-        description: 'Пропустить текущий трек'
-    },
-    {
-        name: 'stop',
-        description: 'Остановить музыку и очистить очередь'
-    },
-    {
-        name: 'pause',
-        description: 'Поставить музыку на паузу'
-    },
-    {
-        name: 'resume',
-        description: 'Возобновить воспроизведение музыки'
-    },
-    {
-        name: 'queue',
-        description: 'Показать текущую очередь треков'
-    },
-    {
-        name: 'volume',
-        description: 'Изменить громкость',
-        options: [
-            { name: 'level', type: 4, required: true, description: 'Громкость от 0 до 100' }
+            { name: 'username', type: 3, required: true, description: 'Имя пользователя Roblox' }
         ]
     }
 ];
@@ -349,6 +289,7 @@ client.once('ready', () => {
     console.log(`✅ Бот ${client.user.tag} запущен!`);
     console.log(`📢 Канал новостей: ${TARGET_CHANNEL_ID}`);
     console.log(`📋 Канал логов: ${LOG_CHANNEL_ID || 'не задан'}`);
+    console.log(`🎮 Roblox команда /roblox загружена!`);
 });
 
 // ========== ОБРАБОТЧИК КОМАНД ==========
@@ -382,106 +323,6 @@ client.on('interactionCreate', async (interaction) => {
         
         await targetChannel.send({ content: roleMention, embeds: [embed] });
         interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
-    }
-
-    // ========== МУЗЫКА ==========
-    if (commandName === 'play') {
-        if (!member.voice.channel) {
-            return interaction.reply({ content: '❌ Вы должны быть в голосовом канале!', ephemeral: true });
-        }
-
-        const query = options.getString('query');
-        await interaction.deferReply();
-
-        try {
-            const { track } = await player.play(member.voice.channel, query, {
-                requestedBy: interaction.user,
-                nodeOptions: {
-                    metadata: { channel: interaction.channel },
-                    volume: 50,
-                    leaveOnEmpty: true,
-                    leaveOnEnd: true
-                }
-            });
-
-            return interaction.editReply(`🎵 **${track.cleanTitle || track.title}** добавлен в очередь!`);
-        } catch (error) {
-            console.error('Ошибка play:', error);
-            return interaction.editReply(`❌ Ошибка: ${error.message}`);
-        }
-    }
-
-    if (commandName === 'skip') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.node.skip();
-        interaction.reply('⏭ Трек пропущен!');
-    }
-
-    if (commandName === 'stop') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        
-        queue.delete();
-        interaction.reply('🛑 Воспроизведение остановлено, очередь очищена.');
-    }
-
-    if (commandName === 'pause') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.node.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.node.setPaused(true);
-        interaction.reply('⏸ Музыка на паузе.');
-    }
-
-    if (commandName === 'resume') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.node.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
-        queue.node.setPaused(false);
-        interaction.reply('▶ Воспроизведение возобновлено.');
-    }
-
-    if (commandName === 'queue') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.tracks.size) {
-            return interaction.reply({ content: '📭 Очередь пуста.', ephemeral: true });
-        }
-        
-        const tracksList = queue.tracks.map((track, i) => `${i + 1}. **${track.cleanTitle || track.title}**`).slice(0, 10).join('\n');
-        const currentTrack = queue.currentTrack;
-        
-        const embed = new EmbedBuilder()
-            .setTitle('🎵 Текущая очередь')
-            .setDescription(`**Сейчас играет:** ${currentTrack ? currentTrack.cleanTitle || currentTrack.title : 'Нет'}\n\n**Очередь:**\n${tracksList || 'Пусто'}`)
-            .setColor(0x00AE86)
-            .setFooter({ text: `Всего треков: ${queue.tracks.size}` });
-        
-        interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    if (commandName === 'volume') {
-        const queue = player.nodes.get(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        
-        const level = options.getInteger('level');
-        if (level < 0 || level > 100) {
-            return interaction.reply({ content: '❌ Громкость должна быть от 0 до 100!', ephemeral: true });
-        }
-        
-        queue.node.setVolume(level);
-        interaction.reply(`🔊 Громкость установлена на **${level}%**`);
     }
 
     // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
@@ -809,6 +650,78 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
         } catch (error) {
             interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+        }
+    }
+
+    // ========== ROBLOX ИНФОРМАЦИЯ ==========
+    if (commandName === 'roblox') {
+        const robloxUsername = options.getString('username');
+        
+        await interaction.deferReply();
+
+        try {
+            const userInfo = await roblox.getUser(robloxUsername, 'username');
+            
+            if (!userInfo || !userInfo.id) {
+                return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🎮 Информация о ${userInfo.username}`)
+                .setColor(0x00AE86)
+                .setThumbnail(userInfo.avatar_url || 'https://www.roblox.com/favicon.ico')
+                .addFields(
+                    { name: '🆔 ID', value: `${userInfo.id}`, inline: true },
+                    { name: '👤 Имя', value: userInfo.username, inline: true },
+                    { name: '📅 На платформе с', value: new Date(userInfo.created).toLocaleDateString('ru-RU'), inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: `Запросил: ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
+
+            if (userInfo.status && userInfo.status !== '') {
+                embed.addFields({ name: '🕒 Статус', value: userInfo.status, inline: false });
+            }
+            
+            if (userInfo.description && userInfo.description !== '') {
+                embed.addFields({ name: '📝 О себе', value: userInfo.description.substring(0, 500), inline: false });
+            }
+
+            if (userInfo.followers && userInfo.followers.count !== undefined) {
+                embed.addFields({ name: '👥 Подписчиков', value: `${userInfo.followers.count}`, inline: true });
+            }
+            
+            if (userInfo.following && userInfo.following.count !== undefined) {
+                embed.addFields({ name: '📡 Подписок', value: `${userInfo.following.count}`, inline: true });
+            }
+            
+            if (userInfo.friends && userInfo.friends.count !== undefined) {
+                embed.addFields({ name: '🤝 Друзей', value: `${userInfo.friends.count}`, inline: true });
+            }
+
+            await interaction.editReply({ embeds: [embed] });
+
+            if (LOG_CHANNEL_ID) {
+                const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+                if (logChannel) {
+                    const logEmbed = new EmbedBuilder()
+                        .setTitle('🌐 Roblox Команда')
+                        .setColor(0x00AE86)
+                        .addFields(
+                            { name: '👤 Пользователь', value: `<@${interaction.user.id}>`, inline: true },
+                            { name: '🔍 Запрос', value: robloxUsername, inline: true },
+                            { name: '📊 Результат', value: `✅ Найден (ID: ${userInfo.id})`, inline: true }
+                        )
+                        .setTimestamp();
+                    await logChannel.send({ embeds: [logEmbed] });
+                }
+            }
+
+        } catch (error) {
+            console.error(`Ошибка получения данных о Roblox:`, error);
+            if (error.message && error.message.includes("does't exist")) {
+                return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
+            }
+            await interaction.editReply(`❌ Произошла ошибка при получении данных. Пожалуйста, попробуйте позже.`);
         }
     }
 });
