@@ -4,7 +4,7 @@ const ms = require('ms');
 const { GiveawaysManager } = require('discord-giveaways');
 const noblox = require('noblox.js');
 const { Player } = require('discord-player');
-const { DefaultExtractors } = require('@discord-player/extractor');
+const { YoutubeiExtractor } = require('discord-player-youtubei');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,50 +30,37 @@ const client = new Client({
     ]
 });
 
-// ========== МУЗЫКАЛЬНАЯ СИСТЕМА ==========
+// ========== МУЗЫКАЛЬНАЯ СИСТЕМА (РАБОЧАЯ) ==========
 const player = new Player(client, {
     leaveOnEmpty: true,
     leaveOnEnd: true,
     leaveOnStop: true,
     volume: 50,
     bufferingTimeout: 3000,
-    pauseOnEmpty: true,
-    autoSelfDeaf: true,
-    ytdlOptions: {
-        filter: 'audioonly',
-        quality: 'highestaudio',
-        highWaterMark: 1 << 25
-    }
+    autoSelfDeaf: true
 });
 
 client.player = player;
 
-// Загрузка экстракторов (YouTube, Spotify, SoundCloud)
+// Регистрируем рабочий YouTube экстрактор
 (async () => {
     try {
-        await player.extractors.loadMulti(DefaultExtractors);
-        console.log('✅ Музыкальные экстракторы загружены (YouTube, Spotify, SoundCloud)');
+        await player.extractors.register(YoutubeiExtractor, {});
+        console.log('✅ YouTubei экстрактор загружен! Музыка будет работать.');
     } catch (error) {
-        console.error('❌ Ошибка загрузки экстракторов:', error);
+        console.error('❌ Ошибка загрузки экстрактора:', error);
     }
 })();
 
-// События музыкального плеера
+// События плеера
 player.events.on('playerStart', (queue, track) => {
     if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`🎵 Начинаю играть: **${track.title}**`);
-    }
-});
-
-player.events.on('playerSkip', (queue, track) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`⏭ Пропущен трек: **${track.title}**`);
-    }
-});
-
-player.events.on('queueEnd', (queue) => {
-    if (queue.metadata?.channel) {
-        queue.metadata.channel.send(`📭 Очередь закончилась. Отключаюсь...`);
+        const embed = new EmbedBuilder()
+            .setTitle('🎵 Сейчас играет')
+            .setDescription(`**${track.title}**`)
+            .setColor(0x00AE86)
+            .setFooter({ text: `Запросил: ${track.requestedBy?.tag || 'Неизвестно'}` });
+        queue.metadata.channel.send({ embeds: [embed] });
     }
 });
 
@@ -81,6 +68,12 @@ player.events.on('playerError', (queue, error) => {
     console.error(`❌ Ошибка воспроизведения: ${error.message}`);
     if (queue.metadata?.channel) {
         queue.metadata.channel.send(`❌ Ошибка: ${error.message}`);
+    }
+});
+
+player.events.on('queueEnd', (queue) => {
+    if (queue.metadata?.channel) {
+        queue.metadata.channel.send(`📭 Очередь закончилась. Отключаюсь...`);
     }
 });
 // ========================================
@@ -262,12 +255,12 @@ const commands = [
             { name: 'username', type: 3, required: true, description: 'Имя пользователя Roblox' }
         ]
     },
-    // Музыкальные команды
+    // Музыка
     {
         name: 'play',
         description: 'Включить музыку по ссылке или названию',
         options: [
-            { name: 'query', type: 3, required: true, description: 'Ссылка на YouTube или название трека' }
+            { name: 'query', type: 3, required: true, description: 'Название трека или ссылка YouTube' }
         ]
     },
     { name: 'skip', description: 'Пропустить текущий трек' },
@@ -299,44 +292,29 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 // ========== ФУНКЦИИ ЛОГОВ ==========
 async function sendLog(guild, action, target, moderator, reason, duration = null) {
-    const logChannelId = LOG_CHANNEL_ID;
-    
-    if (!logChannelId) return;
-    
-    const logChannel = guild.channels.cache.get(logChannelId);
+    const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
     if (!logChannel) return;
-    
+
     const embed = new EmbedBuilder()
         .setTitle(getActionTitle(action))
         .setColor(getActionColor(action))
         .addFields(
-            { name: '👤 Пользователь', value: `${target.user?.tag || target.tag || target} (${target.id || target})`, inline: true },
-            { name: '🛡️ Модератор', value: `${moderator.user?.tag || moderator.tag}`, inline: true },
+            { name: '👤 Пользователь', value: target.user?.tag || target.tag || target, inline: true },
+            { name: '🛡️ Модератор', value: moderator.user?.tag || moderator.tag, inline: true },
             { name: '📝 Причина', value: reason || 'Не указана', inline: false }
         )
         .setTimestamp();
-    
-    if (duration) {
-        embed.addFields({ name: '⏱️ Длительность', value: duration, inline: true });
-    }
-    
-    try {
-        await logChannel.send({ embeds: [embed] });
-    } catch (error) {
-        console.error(`❌ Ошибка отправки лога: ${error.message}`);
-    }
+
+    if (duration) embed.addFields({ name: '⏱️ Длительность', value: duration, inline: true });
+
+    await logChannel.send({ embeds: [embed] }).catch(console.error);
 }
 
 function getActionTitle(action) {
     const titles = {
-        'Бан': '🔨 БАН',
-        'Разбан': '🔓 РАЗБАН',
-        'Кик': '👢 КИК',
-        'Мут': '🔇 МУТ',
-        'Размут': '🔊 СНЯТИЕ МУТА',
-        'Предупреждение': '⚠️ ПРЕДУПРЕЖДЕНИЕ',
-        'Тайм-аут': '⏰ ТАЙМ-АУТ',
-        'Очистка чата': '🧹 ОЧИСТКА ЧАТА',
+        'Бан': '🔨 БАН', 'Разбан': '🔓 РАЗБАН', 'Кик': '👢 КИК',
+        'Мут': '🔇 МУТ', 'Размут': '🔊 СНЯТИЕ МУТА', 'Предупреждение': '⚠️ ПРЕДУПРЕЖДЕНИЕ',
+        'Тайм-аут': '⏰ ТАЙМ-АУТ', 'Очистка чата': '🧹 ОЧИСТКА ЧАТА',
         'Очистка предупреждений': '🗑️ ОЧИСТКА ПРЕДУПРЕЖДЕНИЙ'
     };
     return titles[action] || `🔨 ${action}`;
@@ -344,14 +322,9 @@ function getActionTitle(action) {
 
 function getActionColor(action) {
     const colors = {
-        'Бан': 0xFF0000,
-        'Разбан': 0x00FF00,
-        'Мут': 0xFFA500,
-        'Размут': 0x00FF00,
-        'Кик': 0xFF0000,
-        'Предупреждение': 0xFFA500,
-        'Тайм-аут': 0xFFA500,
-        'Очистка чата': 0x00AAFF
+        'Бан': 0xFF0000, 'Разбан': 0x00FF00, 'Мут': 0xFFA500,
+        'Размут': 0x00FF00, 'Кик': 0xFF0000, 'Предупреждение': 0xFFA500,
+        'Тайм-аут': 0xFFA500, 'Очистка чата': 0x00AAFF
     };
     return colors[action] || 0x5865F2;
 }
@@ -366,29 +339,24 @@ client.once('ready', () => {
     console.log(`✅ Бот ${client.user.tag} запущен!`);
     console.log(`📢 Канал новостей: ${TARGET_CHANNEL_ID}`);
     console.log(`📋 Канал логов: ${LOG_CHANNEL_ID || 'не задан'}`);
-    console.log(`🎮 Roblox команда /roblox загружена!`);
-    console.log(`🎵 Музыкальная система загружена!`);
 });
 
 // ========== ОБРАБОТЧИК КОМАНД ==========
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
-    
+
     const { commandName, options, member, guild, user } = interaction;
 
-    // ========== НОВОСТИ ==========
+    // НОВОСТИ
     if (commandName === 'news') {
         const text = options.getString('text');
         const ping = options.getString('ping');
         const fromWhom = options.getString('from_whom');
-        
         const targetChannel = client.channels.cache.get(TARGET_CHANNEL_ID);
-        if (!targetChannel) {
-            return interaction.reply({ content: '❌ Канал не найден', ephemeral: true });
-        }
-        
+
+        if (!targetChannel) return interaction.reply({ content: '❌ Канал не найден', ephemeral: true });
+
         const roleMention = /^\d+$/.test(ping) ? `<@&${ping}>` : ping;
-        
         const embed = new EmbedBuilder()
             .setTitle('📢 Новость')
             .setDescription(text)
@@ -398,14 +366,12 @@ client.on('interactionCreate', async (interaction) => {
                 { name: '👤 Автор', value: interaction.user.tag, inline: true }
             )
             .setTimestamp();
-        
+
         await targetChannel.send({ content: roleMention, embeds: [embed] });
-        interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
+        return interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
     }
 
-    // ========== МУЗЫКАЛЬНЫЕ КОМАНДЫ ==========
-    
-    // PLAY - Воспроизведение музыки
+    // МУЗЫКА - PLAY (рабочая версия)
     if (commandName === 'play') {
         if (!member.voice.channel) {
             return interaction.reply({ content: '❌ Вы должны быть в голосовом канале!', ephemeral: true });
@@ -432,489 +398,344 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // SKIP - Пропуск трека
+    // Остальные музыкальные команды
     if (commandName === 'skip') {
         const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
+        if (!queue?.isPlaying()) return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
         queue.node.skip();
-        interaction.reply('⏭ Трек пропущен!');
+        return interaction.reply('⏭ Трек пропущен!');
     }
 
-    // STOP - Остановка и очистка очереди
     if (commandName === 'stop') {
         const queue = player.nodes.get(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        
+        if (!queue) return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
         queue.delete();
-        interaction.reply('🛑 Воспроизведение остановлено, очередь очищена.');
+        return interaction.reply('🛑 Воспроизведение остановлено, очередь очищена.');
     }
 
-    // PAUSE - Пауза
     if (commandName === 'pause') {
         const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.node.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
+        if (!queue?.isPlaying()) return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
         queue.node.setPaused(true);
-        interaction.reply('⏸ Музыка на паузе.');
+        return interaction.reply('⏸ Музыка на паузе.');
     }
 
-    // RESUME - Продолжить
     if (commandName === 'resume') {
         const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.node.isPlaying()) {
-            return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
-        }
-        
+        if (!queue?.isPlaying()) return interaction.reply({ content: '❌ Сейчас ничего не играет!', ephemeral: true });
         queue.node.setPaused(false);
-        interaction.reply('▶ Воспроизведение возобновлено.');
+        return interaction.reply('▶ Воспроизведение возобновлено.');
     }
 
-    // QUEUE - Показать очередь
     if (commandName === 'queue') {
         const queue = player.nodes.get(guild.id);
-        if (!queue || !queue.tracks.size) {
-            return interaction.reply({ content: '📭 Очередь пуста.', ephemeral: true });
-        }
-        
+        if (!queue?.tracks?.size) return interaction.reply({ content: '📭 Очередь пуста.', ephemeral: true });
+
         const tracksList = queue.tracks.slice(0, 10).map((track, i) => `${i + 1}. **${track.title}**`).join('\n');
-        const currentTrack = queue.currentTrack;
-        
         const embed = new EmbedBuilder()
             .setTitle('🎵 Текущая очередь')
-            .setDescription(`**Сейчас играет:** ${currentTrack ? currentTrack.title : 'Нет'}\n\n**Очередь:**\n${tracksList || 'Пусто'}`)
+            .setDescription(`**Сейчас играет:** ${queue.currentTrack?.title || 'Нет'}\n\n**Очередь:**\n${tracksList}`)
             .setColor(0x00AE86)
             .setFooter({ text: `Всего треков: ${queue.tracks.size}` });
-        
-        interaction.reply({ embeds: [embed], ephemeral: true });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // VOLUME - Громкость
     if (commandName === 'volume') {
         const queue = player.nodes.get(guild.id);
-        if (!queue) {
-            return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
-        }
-        
+        if (!queue) return interaction.reply({ content: '❌ Бот не в голосовом канале!', ephemeral: true });
+
         const level = options.getInteger('level');
-        if (level < 0 || level > 100) {
-            return interaction.reply({ content: '❌ Громкость должна быть от 0 до 100!', ephemeral: true });
-        }
-        
+        if (level < 0 || level > 100) return interaction.reply({ content: '❌ Громкость от 0 до 100!', ephemeral: true });
+
         queue.node.setVolume(level);
-        interaction.reply(`🔊 Громкость установлена на **${level}%**`);
+        return interaction.reply(`🔊 Громкость установлена на **${level}%**`);
     }
 
-    // ========== ПРОВЕРКА ПРАВ ДЛЯ МОДЕРАЦИИ ==========
-    if (['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'clearwarnings', 'timeout', 'clear'].includes(commandName)) {
-        if (!hasModPermissions(member)) {
-            return interaction.reply({ content: '❌ Недостаточно прав!', ephemeral: true });
-        }
+    // МОДЕРАЦИЯ (проверка прав)
+    if (['ban', 'unban', 'kick', 'mute', 'unmute', 'warn', 'clearwarnings', 'timeout', 'clear'].includes(commandName) && !hasModPermissions(member)) {
+        return interaction.reply({ content: '❌ Недостаточно прав!', ephemeral: true });
     }
 
-    // ========== БАН ==========
+    // БАН
     if (commandName === 'ban') {
         const targetUser = options.getUser('user');
         const reason = options.getString('reason') || 'Не указана';
-        
         try {
             await guild.members.ban(targetUser.id, { reason: `${reason} (Модератор: ${user.tag})` });
             await sendLog(guild, 'Бан', targetUser, user, reason);
-            interaction.reply({ content: `✅ ${targetUser.tag} забанен`, ephemeral: true });
+            return interaction.reply({ content: `✅ ${targetUser.tag} забанен`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== РАЗБАН ==========
+    // РАЗБАН
     if (commandName === 'unban') {
         const userId = options.getString('user_id');
         const reason = options.getString('reason') || 'Не указана';
-        
         try {
             const bans = await guild.bans.fetch();
             const bannedUser = bans.find(ban => ban.user.id === userId);
-            
-            if (!bannedUser) {
-                return interaction.reply({ content: '❌ Пользователь не найден в банах', ephemeral: true });
-            }
-            
+            if (!bannedUser) return interaction.reply({ content: '❌ Пользователь не найден в банах', ephemeral: true });
+
             await guild.members.unban(userId, reason);
             await sendLog(guild, 'Разбан', bannedUser.user, user, reason);
-            interaction.reply({ content: `✅ ${bannedUser.user.tag} разбанен`, ephemeral: true });
+            return interaction.reply({ content: `✅ ${bannedUser.user.tag} разбанен`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== КИК ==========
+    // КИК
     if (commandName === 'kick') {
         const targetUser = options.getUser('user');
         const reason = options.getString('reason') || 'Не указана';
-        
         try {
             const targetMember = await guild.members.fetch(targetUser.id);
             await targetMember.kick(`${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Кик', targetUser, user, reason);
-            interaction.reply({ content: `✅ ${targetUser.tag} кикнут`, ephemeral: true });
+            return interaction.reply({ content: `✅ ${targetUser.tag} кикнут`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== МУТ ==========
+    // МУТ
     if (commandName === 'mute') {
         const targetUser = options.getUser('user');
         const duration = options.getString('duration');
         const reason = options.getString('reason') || 'Не указана';
-        
         try {
             const targetMember = await guild.members.fetch(targetUser.id);
             const msDuration = ms(duration);
-            
-            if (!msDuration || msDuration < 60000) {
-                return interaction.reply({ content: '❌ Минимум 1 минута', ephemeral: true });
-            }
-            
+            if (!msDuration || msDuration < 60000) return interaction.reply({ content: '❌ Минимум 1 минута', ephemeral: true });
+
             await targetMember.timeout(msDuration, `${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Мут', targetUser, user, reason, duration);
-            interaction.reply({ content: `✅ ${targetUser.tag} замучен на ${duration}`, ephemeral: true });
+            return interaction.reply({ content: `✅ ${targetUser.tag} замучен на ${duration}`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== СНЯТЬ МУТ ==========
+    // СНЯТЬ МУТ
     if (commandName === 'unmute') {
         const targetUser = options.getUser('user');
         const reason = options.getString('reason') || 'Не указана';
-        
         try {
             const targetMember = await guild.members.fetch(targetUser.id);
             await targetMember.timeout(null, `${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Размут', targetUser, user, reason);
-            interaction.reply({ content: `✅ Мут снят с ${targetUser.tag}`, ephemeral: true });
+            return interaction.reply({ content: `✅ Мут снят с ${targetUser.tag}`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== ТАЙМ-АУТ ==========
+    // ТАЙМ-АУТ
     if (commandName === 'timeout') {
         const targetUser = options.getUser('user');
         const duration = options.getString('duration');
         const reason = options.getString('reason') || 'Не указана';
-        
         try {
             const targetMember = await guild.members.fetch(targetUser.id);
             const msDuration = ms(duration);
-            
-            if (!msDuration) {
-                return interaction.reply({ content: '❌ Неверный формат (1m, 1h, 1d)', ephemeral: true });
-            }
-            
+            if (!msDuration) return interaction.reply({ content: '❌ Неверный формат (1m, 1h, 1d)', ephemeral: true });
+
             await targetMember.timeout(msDuration, `${reason} (Модератор: ${user.tag})`);
             await sendLog(guild, 'Тайм-аут', targetUser, user, reason, duration);
-            interaction.reply({ content: `✅ Тайм-аут ${targetUser.tag} на ${duration}`, ephemeral: true });
+            return interaction.reply({ content: `✅ Тайм-аут ${targetUser.tag} на ${duration}`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== ПРЕДУПРЕЖДЕНИЕ ==========
+    // ПРЕДУПРЕЖДЕНИЕ
     if (commandName === 'warn') {
         const targetUser = options.getUser('user');
         const reason = options.getString('reason');
-        
         const key = `${guild.id}-${targetUser.id}`;
         if (!warnings.has(key)) warnings.set(key, []);
-        
+
         const userWarnings = warnings.get(key);
         userWarnings.push({ reason, moderator: user.tag, date: new Date().toISOString() });
         warnings.set(key, userWarnings);
-        
+
         await sendLog(guild, 'Предупреждение', targetUser, user, reason);
-        
-        try {
-            await targetUser.send(`⚠️ Предупреждение на ${guild.name}\nПричина: ${reason}\nВсего: ${userWarnings.length}`);
-        } catch (e) {}
-        
-        interaction.reply({ content: `⚠️ Предупреждение ${targetUser.tag}. Причина: ${reason} (${userWarnings.length})`, ephemeral: true });
+        try { await targetUser.send(`⚠️ Предупреждение на ${guild.name}\nПричина: ${reason}\nВсего: ${userWarnings.length}`); } catch (e) {}
+
+        return interaction.reply({ content: `⚠️ Предупреждение ${targetUser.tag}. Причина: ${reason} (${userWarnings.length})`, ephemeral: true });
     }
 
-    // ========== ПОКАЗАТЬ ПРЕДУПРЕЖДЕНИЯ ==========
+    // ПОКАЗАТЬ ПРЕДУПРЕЖДЕНИЯ
     if (commandName === 'warnings') {
         const targetUser = options.getUser('user');
-        const key = `${guild.id}-${targetUser.id}`;
-        const userWarnings = warnings.get(key) || [];
-        
-        if (userWarnings.length === 0) {
-            return interaction.reply({ content: `✅ Нет предупреждений у ${targetUser.tag}`, ephemeral: true });
-        }
-        
-        const warnList = userWarnings.map((w, i) => `${i+1}. ${w.reason} — ${w.moderator} (${new Date(w.date).toLocaleString()})`).join('\n');
-        
+        const userWarnings = warnings.get(`${guild.id}-${targetUser.id}`) || [];
+
+        if (userWarnings.length === 0) return interaction.reply({ content: `✅ Нет предупреждений у ${targetUser.tag}`, ephemeral: true });
+
+        const warnList = userWarnings.map((w, i) => `${i + 1}. ${w.reason} — ${w.moderator} (${new Date(w.date).toLocaleString()})`).join('\n');
         const embed = new EmbedBuilder()
             .setTitle(`⚠️ Предупреждения ${targetUser.tag}`)
             .setDescription(warnList)
             .setColor(0xFFA500)
             .setFooter({ text: `Всего: ${userWarnings.length}` });
-        
-        interaction.reply({ embeds: [embed], ephemeral: true });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // ========== ОЧИСТИТЬ ПРЕДУПРЕЖДЕНИЯ ==========
+    // ОЧИСТИТЬ ПРЕДУПРЕЖДЕНИЯ
     if (commandName === 'clearwarnings') {
         const targetUser = options.getUser('user');
         const key = `${guild.id}-${targetUser.id}`;
-        
-        if (!warnings.has(key)) {
-            return interaction.reply({ content: `❌ Нет предупреждений у ${targetUser.tag}`, ephemeral: true });
-        }
-        
+        if (!warnings.has(key)) return interaction.reply({ content: `❌ Нет предупреждений у ${targetUser.tag}`, ephemeral: true });
+
         warnings.delete(key);
         await sendLog(guild, 'Очистка предупреждений', targetUser, user, 'Все предупреждения удалены');
-        interaction.reply({ content: `✅ Очищены предупреждения ${targetUser.tag}`, ephemeral: true });
+        return interaction.reply({ content: `✅ Очищены предупреждения ${targetUser.tag}`, ephemeral: true });
     }
 
-    // ========== ОЧИСТКА ЧАТА ==========
+    // ОЧИСТКА ЧАТА
     if (commandName === 'clear') {
         const amount = options.getInteger('amount');
-        
-        if (amount < 1 || amount > 100) {
-            return interaction.reply({ content: '❌ От 1 до 100 сообщений', ephemeral: true });
-        }
-        
+        if (amount < 1 || amount > 100) return interaction.reply({ content: '❌ От 1 до 100 сообщений', ephemeral: true });
+
         try {
             const deleted = await interaction.channel.bulkDelete(amount, true);
             await sendLog(guild, 'Очистка чата', `#${interaction.channel.name}`, user, `${deleted.size} сообщений`);
-            interaction.reply({ content: `✅ Удалено ${deleted.size} сообщений`, ephemeral: true });
+            return interaction.reply({ content: `✅ Удалено ${deleted.size} сообщений`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== РОЗЫГРЫШИ ==========
+    // РОЗЫГРЫШ СОЗДАНИЕ
     if (commandName === 'giveaway') {
-        if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
-            !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             return interaction.reply({ content: '❌ Нужны права "Управление сервером"', ephemeral: true });
         }
-        
+
         const channel = options.getChannel('channel');
         const durationRaw = options.getString('duration');
         const winners = options.getInteger('winners');
         const prize = options.getString('prize');
         const description = options.getString('description') || 'Нажми на 🎉!';
-        
-        if (!channel.isTextBased()) {
-            return interaction.reply({ content: '❌ Канал должен быть текстовым', ephemeral: true });
-        }
-        
         const durationMs = ms(durationRaw);
-        if (!durationMs || durationMs < 60000) {
-            return interaction.reply({ content: '❌ Минимум 1 минута', ephemeral: true });
-        }
-        
-        if (winners < 1 || winners > 10) {
-            return interaction.reply({ content: '❌ Победителей: 1-10', ephemeral: true });
-        }
-        
+
+        if (!durationMs || durationMs < 60000) return interaction.reply({ content: '❌ Минимум 1 минута', ephemeral: true });
+        if (winners < 1 || winners > 10) return interaction.reply({ content: '❌ Победителей: 1-10', ephemeral: true });
+
         try {
             await client.giveawaysManager.start(channel, {
-                duration: durationMs,
-                prize: prize,
-                winnerCount: winners,
-                hostedBy: interaction.user,
-                description: description,
+                duration: durationMs, prize, winnerCount: winners, hostedBy: interaction.user, description,
                 messages: {
-                    giveaway: '🎉 **РОЗЫГРЫШ** 🎉',
-                    giveawayEnded: '🎉 **РОЗЫГРЫШ ЗАВЕРШЁН** 🎉',
-                    invitation: 'Реагируй на 🎉!',
-                    drawing: 'Осталось: {timestamp}',
-                    embedFooter: `Создал: ${interaction.user.tag}`,
-                    noWinner: '❌ Недостаточно участников',
-                    winners: '🏆 Победитель(и):',
-                    endedAt: 'Завершён'
+                    giveaway: '🎉 **РОЗЫГРЫШ** 🎉', giveawayEnded: '🎉 **РОЗЫГРЫШ ЗАВЕРШЁН** 🎉',
+                    invitation: 'Реагируй на 🎉!', drawing: 'Осталось: {timestamp}',
+                    embedFooter: `Создал: ${interaction.user.tag}`, noWinner: '❌ Недостаточно участников',
+                    winners: '🏆 Победитель(и):', endedAt: 'Завершён'
                 }
             });
-            
-            interaction.reply({ content: `✅ Розыгрыш "${prize}" создан в ${channel}`, ephemeral: true });
+            return interaction.reply({ content: `✅ Розыгрыш "${prize}" создан в ${channel}`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
+    // ПЕРЕВЫБОР ПОБЕДИТЕЛЯ
     if (commandName === 'reroll') {
-        if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
-            !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             return interaction.reply({ content: '❌ Недостаточно прав', ephemeral: true });
         }
-        
-        const messageId = options.getString('message_id');
-        
         try {
-            await client.giveawaysManager.reroll(messageId);
-            interaction.reply({ content: '✅ Победитель перевыбран', ephemeral: true });
+            await client.giveawaysManager.reroll(options.getString('message_id'));
+            return interaction.reply({ content: '✅ Победитель перевыбран', ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: '❌ Розыгрыш не найден', ephemeral: true });
+            return interaction.reply({ content: '❌ Розыгрыш не найден', ephemeral: true });
         }
     }
 
+    // ЗАВЕРШЕНИЕ РОЗЫГРЫША
     if (commandName === 'endgiveaway') {
-        if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && 
-            !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        if (!member.permissions.has(PermissionsBitField.Flags.Administrator) && !member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             return interaction.reply({ content: '❌ Недостаточно прав', ephemeral: true });
         }
-        
-        const messageId = options.getString('message_id');
-        
         try {
-            await client.giveawaysManager.end(messageId);
-            interaction.reply({ content: '✅ Розыгрыш завершён', ephemeral: true });
+            await client.giveawaysManager.end(options.getString('message_id'));
+            return interaction.reply({ content: '✅ Розыгрыш завершён', ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: '❌ Розыгрыш не найден', ephemeral: true });
+            return interaction.reply({ content: '❌ Розыгрыш не найден', ephemeral: true });
         }
     }
 
+    // СПИСОК РОЗЫГРЫШЕЙ
     if (commandName === 'listgiveaways') {
-        const activeGiveaways = client.giveawaysManager.giveaways.filter(
-            g => g.guildId === interaction.guildId && !g.ended
-        );
-        
-        if (activeGiveaways.length === 0) {
-            return interaction.reply({ content: '📭 Нет активных розыгрышей', ephemeral: true });
-        }
-        
-        const list = activeGiveaways.map((g, i) => `${i+1}. **${g.prize}** — <#${g.channelId}> (участников: ${g.participantsCount || 0})`).join('\n');
-        
-        const embed = new EmbedBuilder()
-            .setTitle('🎁 Активные розыгрыши')
-            .setDescription(list)
-            .setColor(0x00AE86);
-        
-        interaction.reply({ embeds: [embed], ephemeral: true });
+        const activeGiveaways = client.giveawaysManager.giveaways.filter(g => g.guildId === interaction.guildId && !g.ended);
+        if (activeGiveaways.length === 0) return interaction.reply({ content: '📭 Нет активных розыгрышей', ephemeral: true });
+
+        const list = activeGiveaways.map((g, i) => `${i + 1}. **${g.prize}** — <#${g.channelId}> (участников: ${g.participantsCount || 0})`).join('\n');
+        const embed = new EmbedBuilder().setTitle('🎁 Активные розыгрыши').setDescription(list).setColor(0x00AE86);
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // ========== БЕГЕМОТ ==========
+    // БЕГЕМОТ
     if (commandName === 'begemot') {
         const targetChannelId = options.getString('channel_id');
-        
-        if (!targetChannelId || !/^\d+$/.test(targetChannelId)) {
-            return interaction.reply({ content: '❌ Укажите ID канала', ephemeral: true });
-        }
-        
+        if (!targetChannelId || !/^\d+$/.test(targetChannelId)) return interaction.reply({ content: '❌ Укажите ID канала', ephemeral: true });
+
         const targetChannel = client.channels.cache.get(targetChannelId);
-        
-        if (!targetChannel) {
-            return interaction.reply({ content: `❌ Канал ${targetChannelId} не найден`, ephemeral: true });
-        }
-        
-        if (!targetChannel.isTextBased()) {
-            return interaction.reply({ content: '❌ Канал должен быть текстовым', ephemeral: true });
-        }
-        
-        const messageText = `**🦛 БЕГЕМОТ ГОВОРИТ:**\n\nПривет всем! Я большой и добрый бегемот! 🦛\nНе забывайте улыбаться и радоваться жизни! ❤️\n\n*С любовью, ваш Бегемот*`;
-        
-        const botMember = interaction.guild.members.me;
-        if (!botMember.permissions.has(PermissionsBitField.Flags.MentionEveryone)) {
+        if (!targetChannel) return interaction.reply({ content: `❌ Канал ${targetChannelId} не найден`, ephemeral: true });
+
+        const messageText = `🦛 **БЕГЕМОТ ГОВОРИТ:**\n\nПривет всем! Я большой и добрый бегемот! 🦛\nНе забывайте улыбаться и радоваться жизни! ❤️\n\n*С любовью, ваш Бегемот*`;
+
+        if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.MentionEveryone)) {
             return interaction.reply({ content: '❌ У бота нет права @everyone', ephemeral: true });
         }
-        
+
         try {
-            await targetChannel.send({
-                content: `@everyone\n\n${messageText}`,
-                allowedMentions: { parse: ['everyone'] }
-            });
-            
-            interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
+            await targetChannel.send({ content: `@everyone\n\n${messageText}`, allowedMentions: { parse: ['everyone'] } });
+            return interaction.reply({ content: `✅ Отправлено в ${targetChannel.toString()}`, ephemeral: true });
         } catch (error) {
-            interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ Ошибка: ${error.message}`, ephemeral: true });
         }
     }
 
-    // ========== ROBLOX ==========
+    // ROBLOX
     if (commandName === 'roblox') {
         const robloxUsername = options.getString('username');
-        
         await interaction.deferReply();
 
         try {
             const userId = await noblox.getIdFromUsername(robloxUsername);
-            
-            if (!userId) {
-                return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
-            }
+            if (!userId) return interaction.editReply(`❌ Пользователь "${robloxUsername}" не найден`);
 
-            const [userInfo, avatarUrl, followers, following, friends] = await Promise.all([
+            const [userInfo, avatarUrl, followers, following] = await Promise.all([
                 noblox.getPlayerInfo(userId),
                 noblox.getPlayerThumbnail(userId, 420, "png", true, "headshot"),
                 noblox.getFollowers(userId),
-                noblox.getFollowings(userId),
-                noblox.getFriends(userId)
+                noblox.getFollowings(userId)
             ]);
-
-            const avatarURL = avatarUrl[0]?.imageUrl || 'https://www.roblox.com/favicon.ico';
-            const followersCount = followers?.total || 0;
-            const followingCount = following?.total || 0;
-            const friendsCount = friends?.length || 0;
 
             const embed = new EmbedBuilder()
                 .setTitle(`🎮 Информация о ${userInfo.username}`)
                 .setColor(0x00AE86)
-                .setThumbnail(avatarURL)
+                .setThumbnail(avatarUrl[0]?.imageUrl || 'https://www.roblox.com/favicon.ico')
                 .addFields(
                     { name: '🆔 ID', value: `${userId}`, inline: true },
-                    { name: '👤 Имя', value: userInfo.username, inline: true },
-                    { name: '📅 На платформе с', value: new Date(userInfo.joinDate).toLocaleDateString('ru-RU'), inline: true },
-                    { name: '👥 Подписчиков', value: `${followersCount}`, inline: true },
-                    { name: '📡 Подписок', value: `${followingCount}`, inline: true },
-                    { name: '🤝 Друзей', value: `${friendsCount}`, inline: true }
+                    { name: '👥 Подписчиков', value: `${followers?.total || 0}`, inline: true },
+                    { name: '📡 Подписок', value: `${following?.total || 0}`, inline: true },
+                    { name: '📅 На платформе с', value: new Date(userInfo.joinDate).toLocaleDateString('ru-RU'), inline: true }
                 )
-                .setTimestamp()
-                .setFooter({ text: `Запросил: ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
+                .setTimestamp().setFooter({ text: `Запросил: ${interaction.user.tag}` });
 
-            if (userInfo.status && userInfo.status !== '') {
-                embed.addFields({ name: '🕒 Статус', value: userInfo.status.substring(0, 200), inline: false });
-            }
-            
-            if (userInfo.blurb && userInfo.blurb !== '') {
-                embed.addFields({ name: '📝 О себе', value: userInfo.blurb.substring(0, 500), inline: false });
-            }
+            if (userInfo.status) embed.addFields({ name: '🕒 Статус', value: userInfo.status.substring(0, 200), inline: false });
+            if (userInfo.blurb) embed.addFields({ name: '📝 О себе', value: userInfo.blurb.substring(0, 500), inline: false });
 
-            await interaction.editReply({ embeds: [embed] });
-
-            if (LOG_CHANNEL_ID) {
-                const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-                if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setTitle('🌐 Roblox Команда')
-                        .setColor(0x00AE86)
-                        .addFields(
-                            { name: '👤 Пользователь', value: `<@${interaction.user.id}>`, inline: true },
-                            { name: '🔍 Запрос', value: robloxUsername, inline: true },
-                            { name: '📊 Результат', value: `✅ Найден (ID: ${userId})`, inline: true }
-                        )
-                        .setTimestamp();
-                    await logChannel.send({ embeds: [logEmbed] });
-                }
-            }
-
+            return interaction.editReply({ embeds: [embed] });
         } catch (error) {
-            console.error(`Ошибка получения данных о Roblox:`, error);
-            if (error.message && error.message.includes("not found")) {
-                return interaction.editReply(`❌ Пользователь с именем **${robloxUsername}** не найден на Roblox.`);
-            }
-            await interaction.editReply(`❌ Произошла ошибка при получении данных. Пожалуйста, попробуйте позже.`);
+            return interaction.editReply(`❌ Ошибка получения данных о Roblox`);
         }
     }
 });
 
-// ========== ЗАПУСК ==========
 client.login(TOKEN);
