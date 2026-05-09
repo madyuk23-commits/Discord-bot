@@ -12,6 +12,6 @@
     "discord-giveaways": "^6.0.1",
     "noblox.js": "^4.13.1",
     "discord-player": "^6.6.7",
-    "@discord-player/extractor": "^4.4.5"
+    "discord-player-youtubei": "^2.0.0"
   }
 }
